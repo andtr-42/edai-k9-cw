@@ -47,7 +47,7 @@ Key columns:
 - `event_id`, `event_type` (impress|view|click|start|heartbeat|pause|resume|fast-forward|stop|complete)
 - `event_ts`, `created_ts` (event time vs row creation time)
 - `user_id`, `session_id`
-- `movie_id` (nullable), `playback_id` (nullable), `playback_start_ts` (nullable), `duration_watch_seconds` (nullable)
+- `movie_id` (nullable), `playback_id` (nullable), `playback_start_ts` (nullable), `current_playback_offset_seconds` (nullable)
 
 ### 3.2 Streaming Data Problems
 

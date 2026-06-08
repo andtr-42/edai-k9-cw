@@ -59,3 +59,37 @@ Total number of ratings generated: 50000
 4           5    24686    Credit Card        Pending 2026-02-11 15:19:49   19.99   2026-02-11 
 
 Total number of payments generated: 50000
+
+
+### Streaming Data Generation
+
+Generated events for minute offset 300 (2026-07-06 19:00:00). Total: 88100
+Generated events for minute offset 360 (2026-07-06 18:00:00). Total: 94100
+Generated events for minute offset 420 (2026-07-06 17:00:00). Total: 100100
+Generated events for minute offset 480 (2026-07-06 16:00:00). Total: 106100
+Generated events for minute offset 540 (2026-07-06 15:00:00). Total: 112100
+Generated events for minute offset 600 (2026-07-06 14:00:00). Total: 118100
+Generated events for minute offset 660 (2026-07-06 13:00:00). Total: 124100
+Generated events for minute offset 720 (2026-07-06 12:00:00). Total: 188100
+Generated events for minute offset 780 (2026-07-06 11:00:00). Total: 194100
+Generated events for minute offset 840 (2026-07-06 10:00:00). Total: 200100
+Generated events for minute offset 900 (2026-07-06 09:00:00). Total: 206100
+Generated events for minute offset 960 (2026-07-06 08:00:00). Total: 212100
+Generated events for minute offset 1020 (2026-07-06 07:00:00). Total: 218100
+Generated events for minute offset 1080 (2026-07-06 06:00:00). Total: 224100
+Generated events for minute offset 1140 (2026-07-06 05:00:00). Total: 230100
+Generated events for minute offset 1200 (2026-07-06 04:00:00). Total: 236100
+Generated events for minute offset 1260 (2026-07-06 03:00:00). Total: 242100
+Generated events for minute offset 1320 (2026-07-06 02:00:00). Total: 248100
+Generated events for minute offset 1380 (2026-07-06 01:00:00). Total: 254100
+
+ Streaming event data: 
+        event_id    event_type             event_ts           created_ts  user_id         session_id  movie_id      playback_id    playback_start_ts  current_playback_offset_seconds
+0  event_1439_11         start  2026-07-06T00:01:00  2026-07-06T00:01:00    11176  user_11176_sess_1   54312.0  playback_207635  2026-07-06T00:01:03                           3594.0
+1  event_1439_29       impress  2026-07-06T00:01:00  2026-07-06T00:01:00    58155  user_58155_sess_1       NaN             None                 None                              NaN
+2  event_1439_67       impress  2026-07-06T00:01:00  2026-07-06T00:01:00    15922  user_15922_sess_1       NaN             None                 None                              NaN
+3  event_1439_91          stop  2026-07-06T00:01:00  2026-07-06T00:01:00    87993  user_87993_sess_1   99419.0  playback_207696  2026-07-06T00:01:05                           2468.0
+4   event_1439_9  fast-forward  2026-07-06T00:01:01  2026-07-06T00:01:01    61963  user_61963_sess_1   99024.0  playback_207633  2026-07-06T00:01:03                           3584.0
+
+Generated 265200 streaming events.
+Generated 265200 streaming events and saved to ../../data/raw/streaming_2/streaming_events.jsonl

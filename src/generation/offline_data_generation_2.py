@@ -450,6 +450,8 @@ if __name__ == "__main__":
     duplicate_rate = 0.05
 
 
+    # DF GENERATIONS
+
     # Generate users data
     users_df = generate_users(
         n_users=n_users,
@@ -457,11 +459,6 @@ if __name__ == "__main__":
         base_date=base_date,
         days_history=days_history,
     )
-
-    # Write to user data to output path
-    output_users_path = os.path.join(OFFLINE_DATA_DIR, "users.parquet")
-    write_parquet(users_df, output_users_path)
-    print(f"Successfully generated and saved {n_users} users to {output_users_path}")
 
     # Generate movies data
     movies_dfs = generate_movies(
@@ -473,24 +470,6 @@ if __name__ == "__main__":
         skew_ratio_genre = skew_ratio_genre,
         schema_change_date = schema_change_date,
     )
-
-    # Set up the movie output dir
-    movies_output_dir = os.path.join(OFFLINE_DATA_DIR, "movies")
-    os.makedirs(movies_output_dir, exist_ok=True)
-
-    # Loop through each monthly DataFrame and write it without partitioning
-    for df_month in movies_dfs:
-        # Retrieve the month metadata string stored in the DataFrame attributes
-        month_str = df_month.attrs["month_metadata"]
-        
-        # Define a clean file name for each month (e.g., movies_2026-01.parquet)
-        file_name = f"movies_{month_str}.parquet"
-        output_file_path = os.path.join(movies_output_dir, file_name)
-        
-        # Call the existing write function without passing partition_cols
-        write_parquet(df_month, output_file_path)
-
-    print(f"\nSuccessfully generated and saved {len(movies_dfs)} monthly movie files to {movies_output_dir}")
 
     # Generate playbacks data
     playbacks_df = generate_playbacks(
@@ -519,10 +498,37 @@ if __name__ == "__main__":
         days_history=days_history,
     )
 
+    # WRITE DF TO PARQUET FILES
+
     # Set up output directories
+    output_users_path = os.path.join(OFFLINE_DATA_DIR, "users.parquet")
+    movies_output_dir = os.path.join(OFFLINE_DATA_DIR, "movies")
     playbacks_output_dir = os.path.join(OFFLINE_DATA_DIR, "playbacks")
     ratings_output_dir = os.path.join(OFFLINE_DATA_DIR, "ratings")
     payments_output_dir = os.path.join(OFFLINE_DATA_DIR, "payments")
+
+    os.makedirs(movies_output_dir, exist_ok=True)
+    os.makedirs(playbacks_output_dir, exist_ok=True)
+    os.makedirs(ratings_output_dir, exist_ok=True)
+    os.makedirs(payments_output_dir, exist_ok=True)
+    
+    # Write to user data to output path
+    write_parquet(users_df, output_users_path)
+    print(f"Successfully generated and saved users data to {output_users_path}")
+
+    # Write movie data by loop through each monthly DataFrame and write it without partitioning
+    for df_month in movies_dfs:
+        # Retrieve the month metadata string stored in the DataFrame attributes
+        month_str = df_month.attrs["month_metadata"]
+        
+        # Define a clean file name for each month (e.g., movies_2026-01.parquet)
+        file_name = f"movies_{month_str}.parquet"
+        output_file_path = os.path.join(movies_output_dir, file_name)
+        
+        # Call the existing write function without passing partition_cols
+        write_parquet(df_month, output_file_path)
+
+    print(f"Successfully generated and saved monthly movie files to {movies_output_dir}")
 
     # Write DataFrames to Parquet with Hive partitioning
     write_parquet(
