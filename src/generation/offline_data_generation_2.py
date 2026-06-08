@@ -71,11 +71,24 @@ MOVIE_CONFIG = {
     "start_release_year": 1970,
     "end_release_year": 2010,
 }
-
+PLAYBACK_CONFIG = {
+    "bounce_rate_range": (0.01, 0.20),
+    "mid_rate_range": (0.20, 0.80),
+    "finish_rate_range": (0.80, 1.00),
+    "distribution_weights": {
+        "bounce": 0.40,
+        "mid": 0.20,
+        "finish": 0.40
+    }
+}
+RATINGS_CONFIG = {
+    "min_rating": 1,
+    "max_rating": 5
+}
 PAYMENT_CONFIG = {
     "payment_methods": ["Credit Card", "Debit Card", "Gift Card"],
     "payment_statuses": ["Success", "Pending", "Failed"],
-    "amount_by_subscription": {
+    "payment_amount_by_subscription": {
         "Standard-With-Ads": 8.99,
         "Standard": 19.99,
         "Premium": 26.99,
@@ -236,9 +249,178 @@ def generate_movies(
     print(all_months_dfs[-1].head(5), "\n")
 
     total_rows = sum(len(df) for df in all_months_dfs)
-    print(f"Total number of movies generated: {total_rows}")
+    print(f"Total number of movies generated: {total_rows} \n")
     return all_months_dfs
 
+def generate_playbacks(
+    n_playbacks: int,
+    n_users: int,
+    movies_dfs: list[pd.DataFrame],
+    playback_config: dict,
+    base_date: pd.Timestamp,
+    days_history: int,
+    duplicate_rate: float = 0.05,
+) -> pd.DataFrame:
+    """Generate reproducible playback logs with a bimodal completion rate distribution and microsecond timing precision."""
+    
+    # 1. Generate the bimodal completion rates cleanly using vectorization
+    bounce_rng = playback_config["bounce_rate_range"]
+    mid_rng = playback_config["mid_rate_range"]
+    finish_rng = playback_config["finish_rate_range"]
+    weights = playback_config["distribution_weights"]
+
+    bounce_rates = np.random.uniform(bounce_rng[0], bounce_rng[1], size=n_playbacks)
+    mid_rates = np.random.uniform(mid_rng[0], mid_rng[1], size=n_playbacks)
+    finish_rates = np.random.uniform(finish_rng[0], finish_rng[1], size=n_playbacks)
+
+    group_selector = np.random.rand(n_playbacks)
+    completion_rates = np.where(
+        group_selector < weights["bounce"],
+        bounce_rates,
+        np.where(
+            group_selector < (weights["bounce"] + weights["mid"]), 
+            mid_rates, 
+            finish_rates
+        ),
+    )
+
+    # Combine generated monthly movie datasets to extract valid movie IDs and runtimes
+    df_movies_all = pd.concat(movies_dfs, ignore_index=True)
+
+    # 2. Generate high cardinality playbacks using replace=True
+    df_playbacks = pd.DataFrame(
+        {
+            "playback_id": np.arange(1, n_playbacks + 1),
+            "user_id": np.random.choice(np.arange(1, n_users + 1), n_playbacks, replace=False),
+            "movie_id": np.random.choice(np.arange(1, len(df_movies_all) + 1), n_playbacks, replace=False),
+        }
+    )
+
+    # Merge runtimes temporarily to accurately evaluate playback durations
+    df_playbacks = df_playbacks.merge(
+        df_movies_all[["movie_id", "runtime_seconds"]], on="movie_id", how="left"
+    )
+
+    # 3. Generate random execution timestamps within the exact historical footprint
+    total_seconds_history = days_history * 24 * 60 * 60
+    random_seconds_offset = np.random.randint(0, total_seconds_history, n_playbacks)
+    
+    df_playbacks["click_ts"] = base_date - pd.to_timedelta(random_seconds_offset, unit="s")
+    df_playbacks["start_ts"] = df_playbacks["click_ts"] + pd.to_timedelta(
+        np.random.randint(0, 15, n_playbacks), unit="s"
+    )
+    
+    df_playbacks["completion_rate"] = completion_rates
+    df_playbacks["duration_watched_seconds"] = (
+        df_playbacks["runtime_seconds"] * df_playbacks["completion_rate"]
+    ).astype(int)
+    
+    df_playbacks["end_ts"] = df_playbacks["start_ts"] + pd.to_timedelta(
+        df_playbacks["duration_watched_seconds"], unit="s"
+    )
+    df_playbacks["playback_date"] = df_playbacks["click_ts"].dt.strftime("%Y-%m-%d")
+    
+    df_playbacks.drop(columns=["runtime_seconds"], inplace=True)
+
+    # 4. Inject systemic duplicate entries using identical transaction fingerprints
+    n_duplicates = int(n_playbacks * duplicate_rate)
+    if n_duplicates > 0:
+        duplicates = df_playbacks.sample(n_duplicates, replace=False).copy()
+        duplicates["playback_id"] = np.arange(
+            n_playbacks + 1, n_playbacks + n_duplicates + 1
+        )
+        df_playbacks = pd.concat([df_playbacks, duplicates], ignore_index=True)
+
+    print("3. Playback data:")
+    print(df_playbacks.head(5), "\n")
+    print(f"Total number of playback transactions generated: {len(df_playbacks)} \n")
+    
+    return df_playbacks
+
+def generate_ratings(
+    n_ratings: int,
+    n_users: int,
+    movies_dfs: list[pd.DataFrame],
+    ratings_config: dict,
+    base_date: pd.Timestamp,
+    days_history: int,
+) -> pd.DataFrame:
+    """Generate ratings logs distributed uniformly across history with explicit timestamps and partitioned dates."""
+    
+    # Calculate total history window in seconds
+    total_seconds_history = days_history * 24 * 60 * 60
+    random_seconds_offset = np.random.randint(0, total_seconds_history, n_ratings)
+
+    # Generate transaction timestamps moving backward from base_date
+    rating_ts = base_date - pd.to_timedelta(random_seconds_offset, unit="s")
+
+    # Combine generated monthly movie datasets to calculate the length
+    total_movies = sum(len(df) for df in movies_dfs)
+    
+    # Extract config limits (+1 to max_rating for inclusion in np.random.randint)
+    low_rate = ratings_config["min_rating"]
+    high_rate = ratings_config["max_rating"] + 1
+
+    # Construct unified ratings DataFrame
+    df_ratings = pd.DataFrame(
+        {
+            "rating_id": np.arange(1, n_ratings + 1),
+            "user_id": np.random.choice(np.arange(1, n_users + 1), n_ratings, replace=True),
+            "movie_id": np.random.choice(np.arange(1, total_movies + 1), n_ratings, replace=True),
+            "rating": np.random.randint(low_rate, high_rate, size=n_ratings),
+            "rating_ts": rating_ts,
+            "rating_date": rating_ts.strftime("%Y-%m-%d"),
+        }
+    )
+
+    print("4. Ratings data:")
+    print(df_ratings.head(5), "\n")
+    print(f"Total number of ratings generated: {len(df_ratings)}\n")
+
+    return df_ratings
+
+def generate_payments(
+    n_payments: int,
+    df_users: pd.DataFrame,
+    payment_config: dict,
+    base_date: pd.Timestamp,
+    days_history: int,
+) -> pd.DataFrame:
+    """Generate payment logs and map transaction amounts based on user subscription types."""
+    
+    # 1. Simplify timestamp generation using a clean microsecond/second offset
+    total_seconds_history = days_history * 24 * 60 * 60
+    random_seconds_offset = np.random.randint(0, total_seconds_history, n_payments)
+    payment_ts = base_date - pd.to_timedelta(random_seconds_offset, unit="s")
+
+    # 2. Construct the base payments DataFrame
+    df_payments = pd.DataFrame(
+        {
+            "payment_id": np.arange(1, n_payments + 1),
+            "user_id": np.random.choice(np.arange(1, len(df_users) + 1), n_payments, replace=True),
+            "payment_method": np.random.choice(payment_config["payment_methods"], n_payments),
+            "payment_status": np.random.choice(payment_config["payment_statuses"], n_payments),
+            "payment_ts": payment_ts,
+        }
+    )
+
+    # 3. Merge to fetch subscription tiers and map corresponding amounts
+    df_payments = df_payments.merge(
+        df_users[["user_id", "subscription_type"]], on="user_id", how="left"
+    )
+    df_payments["amount"] = df_payments["subscription_type"].map(
+        payment_config["payment_amount_by_subscription"]
+    )
+    
+    # 4. Clean up temporary columns and format partition dates
+    df_payments.drop(columns=["subscription_type"], inplace=True)
+    df_payments["payment_date"] = df_payments["payment_ts"].dt.strftime("%Y-%m-%d")
+
+    print("5. Payments data:")
+    print(df_payments.head(5), "\n")
+    print(f"Total number of payments generated: {len(df_payments)}\n")
+
+    return df_payments
 
 if __name__ == "__main__":
     # Initialize environment
@@ -247,12 +429,16 @@ if __name__ == "__main__":
 
     # Execution parameters
     n_users = 100_000
-    n_movies = 100_00
+    n_movies = 100_000
+    n_playbacks = 100_000
+    n_ratings = 50_000
+    n_payment_attempts = 50_000
     base_date = pd.Timestamp("2026-06-07")  # Set static date for reproducible
     days_history = 180
     schema_change_date = pd.Timestamp("2026-04-07") # Set static date for reproducible
     skew_genre="Drama"
     skew_ratio_genre = 0.6
+    duplicate_rate = 0.05
 
 
     # Generate users data
@@ -266,11 +452,10 @@ if __name__ == "__main__":
     # Write to user data to output path
     # output_users_path = os.path.join(OFFLINE_DATA_DIR, "users.parquet")
     # write_parquet(users_df, output_users_path)
-
     # print(f"Successfully generated and saved {n_users} users to {output_users_path}")
 
     # Generate movies data
-    movies_df = generate_movies(
+    movies_dfs = generate_movies(
         n_movies=n_movies,
         movie_config=MOVIE_CONFIG,
         base_date = base_date,
@@ -279,3 +464,51 @@ if __name__ == "__main__":
         skew_ratio_genre = skew_ratio_genre,
         schema_change_date = schema_change_date,
     )
+
+    # Set up the movie output dir
+    # movies_output_dir = os.path.join(OFFLINE_DATA_DIR, "movies")
+    # os.makedirs(movies_output_dir, exist_ok=True)
+
+    # # Loop through each monthly DataFrame and write it without partitioning
+    # for df_month in movies_dfs:
+    #     # Retrieve the month metadata string stored in the DataFrame attributes
+    #     month_str = df_month.attrs["month_metadata"]
+        
+    #     # Define a clean file name for each month (e.g., movies_2026-01.parquet)
+    #     file_name = f"movies_{month_str}.parquet"
+    #     output_file_path = os.path.join(movies_output_dir, file_name)
+        
+    #     # Call the existing write function without passing partition_cols
+    #     write_parquet(df_month, output_file_path)
+
+    # print(f"\nSuccessfully generated and saved {len(movies_dfs)} monthly movie files to {movies_output_dir}")
+
+    # Generate playbacks data
+    playbacks_df = generate_playbacks(
+        n_playbacks=n_playbacks,
+        n_users=n_users,
+        movies_dfs=movies_dfs,
+        playback_config=PLAYBACK_CONFIG,
+        base_date=base_date,
+        days_history=days_history,
+    )
+
+    ratings_df = generate_ratings(
+        n_ratings=n_ratings,
+        n_users=n_users,
+        movies_dfs=movies_dfs,  # This uses the output from your existing generate_movies call
+        ratings_config=RATINGS_CONFIG,
+        base_date=base_date,
+        days_history=days_history,
+    )
+
+    payments_df = generate_payments(
+        n_payments=n_payment_attempts,
+        df_users=users_df,              # Pass the DataFrame generated earlier in the script
+        payment_config=PAYMENT_CONFIG,  # Pass the config dictionary from the top of your file
+        base_date=base_date,
+        days_history=days_history,
+    )
+
+
+

@@ -93,7 +93,7 @@ days_history: 180
 skew_genre: "Drama"
 skew_ratio_genre: 0.85
 skew_ratio_watch_duration_seconds: 0.80
-duplicate_rate_offline: 0.02
+duplicate_rate_offline: 0.05
 schema_change_date: "2026-02-01"
 base_events_per_min: 100
 burst_multiplier: 30
