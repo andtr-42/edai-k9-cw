@@ -1,14 +1,12 @@
-import argparse
 import json
 import random
-import time
 import os
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone, timedelta
-from offline_data_generator import OUTPUT_DIR_OFFLINE, N_USERS, N_MOVIES
+from src.generation.offline_data_generation import OUTPUT_DIR_OFFLINE, N_USERS, N_MOVIES
 
-OUTPUT_DIR_STREAMING = "../data/raw/streaming/"
+OUTPUT_DIR_STREAMING = "../../data/raw/streaming/"
 os.makedirs(OUTPUT_DIR_STREAMING, exist_ok=True)
 np.random.seed(42)
 
@@ -46,7 +44,7 @@ def generate_streaming_events(
     late_delay_min_max: tuple,  # [5, 45]
     duplicate_rate_stream: float,
 ) -> None:
-    
+
     print("Starting to generate streaming events...")
 
     # read the movie data to get the actual runtime of each movie so that we can generate realistic playback events
@@ -188,8 +186,10 @@ def generate_streaming_events(
                     }
                 )
 
-                # time.sleep(delay)  # simulate real-time event generation        
-        print(f"Generated events for minute offset {minute_offset} ({event_ts.strftime('%Y-%m-%d %H:%M:%S')})")
+                # time.sleep(delay)  # simulate real-time event generation
+        print(
+            f"Generated events for minute offset {minute_offset} ({event_ts.strftime('%Y-%m-%d %H:%M:%S')})"
+        )
         print(f"Total events generated so far: {len(events)} \n")
 
     # add some duplicates to simulate duplicate events in the stream
@@ -200,7 +200,9 @@ def generate_streaming_events(
     for dup_event in duplicate_events:
         original_event_ts = datetime.fromisoformat(dup_event["event_ts"])
         duplicate_event_ts = original_event_ts + timedelta(
-            seconds=random.randint(60, 180) # duplicate event occurs 1-3 minutes after the original event
+            seconds=random.randint(
+                60, 180
+            )  # duplicate event occurs 1-3 minutes after the original event
         )  # duplicate event occurs 1-3 minutes after the original event
         dup_event["event_id"] = f"{dup_event['event_id']}_dup"
         dup_event["event_ts"] = duplicate_event_ts.isoformat()

@@ -87,10 +87,9 @@ PAYMENT_AMOUNT_BY_SUBSCRIPTION = {
 def _write(df: pd.DataFrame, path: str, partition_cols: list = None) -> None:
     tbl = pa.Table.from_pandas(df)
     if partition_cols:
-
         hive_partitioning = ds.partitioning(
             schema=pa.schema([tbl.schema.field(col) for col in partition_cols]),
-            flavor="hive"
+            flavor="hive",
         )
 
         ds.write_dataset(
@@ -121,6 +120,7 @@ def generate_users(n_users: int, days_history: int = 180) -> None:
     print(
         f"users.parquet  — {n_users:,} rows, uniform distribution, all columns present"
     )
+
 
 def generate_movies(
     n_movies: int,

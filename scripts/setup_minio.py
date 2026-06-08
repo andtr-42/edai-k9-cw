@@ -14,12 +14,14 @@ client = Minio(
     secure=False,
 )
 
+
 def create_bronze_bucket():
     if not client.bucket_exists(BRONZE_BUCKET_NAME):
         client.make_bucket(BRONZE_BUCKET_NAME)
         print(f"Bucket '{BRONZE_BUCKET_NAME}' created successfully.")
     else:
         print(f"Bucket '{BRONZE_BUCKET_NAME}' already exists.")
+
 
 def create_silver_bucket():
     if not client.bucket_exists(SILVER_BUCKET_NAME):
@@ -28,9 +30,11 @@ def create_silver_bucket():
     else:
         print(f"Bucket '{SILVER_BUCKET_NAME}' already exists.")
 
+
 def main():
     create_bronze_bucket()
     create_silver_bucket()
+
 
 if __name__ == "__main__":
     main()
