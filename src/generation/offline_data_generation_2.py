@@ -1,4 +1,5 @@
 import os
+import shutil
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -423,6 +424,14 @@ def generate_payments(
     return df_payments
 
 if __name__ == "__main__":
+
+    if os.path.exists(OFFLINE_DATA_DIR):
+        shutil.rmtree(OFFLINE_DATA_DIR)
+        print("Folder contents wiped. Empty folder preserved.")
+    else:
+        print("Directory did not exist.")
+
+
     # Initialize environment
     np.random.seed(RANDOM_SEED)
     os.makedirs(OFFLINE_DATA_DIR, exist_ok=True)
@@ -450,9 +459,9 @@ if __name__ == "__main__":
     )
 
     # Write to user data to output path
-    # output_users_path = os.path.join(OFFLINE_DATA_DIR, "users.parquet")
-    # write_parquet(users_df, output_users_path)
-    # print(f"Successfully generated and saved {n_users} users to {output_users_path}")
+    output_users_path = os.path.join(OFFLINE_DATA_DIR, "users.parquet")
+    write_parquet(users_df, output_users_path)
+    print(f"Successfully generated and saved {n_users} users to {output_users_path}")
 
     # Generate movies data
     movies_dfs = generate_movies(
@@ -466,22 +475,22 @@ if __name__ == "__main__":
     )
 
     # Set up the movie output dir
-    # movies_output_dir = os.path.join(OFFLINE_DATA_DIR, "movies")
-    # os.makedirs(movies_output_dir, exist_ok=True)
+    movies_output_dir = os.path.join(OFFLINE_DATA_DIR, "movies")
+    os.makedirs(movies_output_dir, exist_ok=True)
 
-    # # Loop through each monthly DataFrame and write it without partitioning
-    # for df_month in movies_dfs:
-    #     # Retrieve the month metadata string stored in the DataFrame attributes
-    #     month_str = df_month.attrs["month_metadata"]
+    # Loop through each monthly DataFrame and write it without partitioning
+    for df_month in movies_dfs:
+        # Retrieve the month metadata string stored in the DataFrame attributes
+        month_str = df_month.attrs["month_metadata"]
         
-    #     # Define a clean file name for each month (e.g., movies_2026-01.parquet)
-    #     file_name = f"movies_{month_str}.parquet"
-    #     output_file_path = os.path.join(movies_output_dir, file_name)
+        # Define a clean file name for each month (e.g., movies_2026-01.parquet)
+        file_name = f"movies_{month_str}.parquet"
+        output_file_path = os.path.join(movies_output_dir, file_name)
         
-    #     # Call the existing write function without passing partition_cols
-    #     write_parquet(df_month, output_file_path)
+        # Call the existing write function without passing partition_cols
+        write_parquet(df_month, output_file_path)
 
-    # print(f"\nSuccessfully generated and saved {len(movies_dfs)} monthly movie files to {movies_output_dir}")
+    print(f"\nSuccessfully generated and saved {len(movies_dfs)} monthly movie files to {movies_output_dir}")
 
     # Generate playbacks data
     playbacks_df = generate_playbacks(
@@ -509,6 +518,36 @@ if __name__ == "__main__":
         base_date=base_date,
         days_history=days_history,
     )
+
+    # Set up output directories
+    playbacks_output_dir = os.path.join(OFFLINE_DATA_DIR, "playbacks")
+    ratings_output_dir = os.path.join(OFFLINE_DATA_DIR, "ratings")
+    payments_output_dir = os.path.join(OFFLINE_DATA_DIR, "payments")
+
+    # Write DataFrames to Parquet with Hive partitioning
+    write_parquet(
+        df=playbacks_df, 
+        output_path=playbacks_output_dir, 
+        partition_cols=["playback_date"]
+    )
+    print(f"Successfully saved playbacks data to {playbacks_output_dir}")
+
+    write_parquet(
+        df=ratings_df, 
+        output_path=ratings_output_dir, 
+        partition_cols=["rating_date"]
+    )
+    print(f"Successfully saved ratings data to {ratings_output_dir}")
+
+    write_parquet(
+        df=payments_df, 
+        output_path=payments_output_dir, 
+        partition_cols=["payment_date"]
+    )
+    print(f"Successfully saved payments data to {payments_output_dir}")
+
+    os._exit(0)
+
 
 
 
