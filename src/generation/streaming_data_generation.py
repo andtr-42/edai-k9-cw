@@ -4,245 +4,232 @@ import os
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone, timedelta
-from src.generation.offline_data_generation import OUTPUT_DIR_OFFLINE, N_USERS, N_MOVIES
+from src.generation.offline_data_generation import OFFLINE_DATA_DIR
 
-OUTPUT_DIR_STREAMING = "../../data/raw/streaming/"
-os.makedirs(OUTPUT_DIR_STREAMING, exist_ok=True)
-np.random.seed(42)
+STREAMING_DATA_DIR = "../../data/streaming/"
+RANDOM_SEED = 42
+MINUTES_PER_HOUR = 60
 
-EVENT_TYPES = [
-    "impress",
-    "view",
-    "click",
-    "start",
-    "heartbeat",
-    "pause",
-    "resume",
-    "fast-forward",
-    "stop",
-    "complete",
-]
-HOURS_HISTORY = 24  # generate events from the last 24 hours
-LATE_DELAY_MIN_SEC = 30  # event_timestamp is at least 30 s in the past
-LATE_DELAY_MAX_SEC = 300  # … up to 5 minutes in the past
+events_config = {
+    "event_types": [
+        "impress",
+        "view",
+        "click",
+        "start",
+        "heartbeat",
+        "pause",
+        "resume",
+        "fast-forward",
+        "stop",
+        "complete",
+    ],
+}
 
-BASELINE_EVENT_RATE_PER_MINUTE = 100  # baseline rate of events per minute
-BURST_EVENT_RATE_PER_MINUTE = 3000  # event rate during bursts
-BURST_START_HOUR_1 = 12  # first burst starts at 12:00
-BURST_START_HOUR_2 = 20  # second burst starts at 18:00
-BURST_DURATION_MINUTES = 20  # each burst lasts for 20 minutes
+def save_events_to_jsonl(df_events: pd.DataFrame, output_dir: str) -> None:
+    """
+    Writes a pandas DataFrame of events to a JSON Lines (.jsonl) file.
+    """    
 
-# def generate_one_streaming_event(event_id: int, event_ts: datetime, created_ts: datetime)
+    # Convert DataFrame to a list of dicts. 
+    # Replace np.nan with None so json.dumps outputs valid 'null' instead of 'NaN'.
+    events_list = df_events.replace({np.nan: None}).to_dict(orient="records")
 
+    with open(output_dir, "w") as f:
+        for event in events_list:
+            f.write(json.dumps(event) + "\n")
+            
+    print(f"Generated {len(df_events)} streaming events and saved to {output_dir}")
 
 def generate_streaming_events(
+    base_date: pd.Timestamp,
+    df_users: pd.DataFrame,
+    df_movies: pd.DataFrame,
     hours_history: int,
     base_events_per_min: int,
-    burst_multipler: int,
-    burst_windows: list,  # ["12:00-12:20", "20:00-20:20"]
+    burst_multiplier: int,
+    burst_windows: list,
     late_arrival_rate: float,
-    late_delay_min_max: tuple,  # [5, 45]
-    duplicate_rate_stream: float,
-) -> None:
+    late_delay_min_max: list,
+    duplicate_rate: float,
+    duplicate_delay_min_max: list,
+) -> pd.DataFrame:
 
-    print("Starting to generate streaming events...")
+    print("Starting to generate streaming events using unified loop...")
 
-    # read the movie data to get the actual runtime of each movie so that we can generate realistic playback events
-    df_movies = pd.read_parquet(
-        os.path.join(OUTPUT_DIR_OFFLINE, "movies_0.6_drama_20260304")
-    )
+    # Extract clean lists and dicts from DataFrames for fast random sampling
+    user_ids = df_users["user_id"].tolist() if "user_id" in df_users.columns else list(range(1, len(df_users) + 1))
     movie_runtimes = df_movies.set_index("movie_id")["runtime_seconds"].to_dict()
-
-    # loop through each minute in the last 24 hours and generate events
+    movie_ids = list(movie_runtimes.keys())
+    
     events = []
-    now = datetime.now(timezone.utc)
+    playback_counter = 0  # Auto-incremental counter starting from 0
+    
+    # Loop through each minute in the requested history
     for minute_offset in range(hours_history * 60):
-        event_ts = now - timedelta(minutes=minute_offset)
-
-        # determine if we are in a burst window
+        event_ts = base_date - timedelta(minutes=minute_offset)
         hour_minute_str = event_ts.strftime("%H:%M")
+
+        # Determine if we are in a burst window
         in_burst = any(
             start <= hour_minute_str < end
             for start, end in [window.split("-") for window in burst_windows]
         )
 
-        # randomly if the event is a late arrival which makes the created_ts different from the event_ts
-        is_late_arrival = random.random() < late_arrival_rate
+        # Set the event target once to avoid duplicating the entire generation block
+        events_per_min = (base_events_per_min * burst_multiplier) if in_burst else base_events_per_min
 
-        if in_burst:
-            events_per_min = base_events_per_min * burst_multipler
-            delay = 60 / events_per_min  # delay between events in seconds
+        # Generate all events for this specific minute
+        for i in range(events_per_min):
+            event_id = f"event_{minute_offset}_{i}"
+            user_id = random.choice(user_ids)
+            event_type = random.choice(events_config["event_types"])
 
-            for i in range(events_per_min):
-                event_id = f"event_{minute_offset}_{i}"
-                user_id = random.randint(1, N_USERS)
-                event_type = random.choice(EVENT_TYPES)
-                session_id = f"session_{random.randint(1, 100000)}"
+            random_second = random.randint(0, 59)
+            exact_event_ts = event_ts + timedelta(seconds=random_second)
+            
+            # Implement time-block session distribution
+            # 00:00-07:59 -> Block 1 | 08:00-15:59 -> Block 2 | 16:00-23:59 -> Block 3
+            time_block = exact_event_ts.hour // 8
+            session_id = f"raw_group_{user_id}_{exact_event_ts.date()}_{time_block}"
 
-                if is_late_arrival:
-                    late_delay_sec = random.uniform(*late_delay_min_max)
-                    created_ts = event_ts + timedelta(seconds=late_delay_sec)
+            # Calculate ingestion time (created_ts) vs actual event time (event_ts)
+            is_late_arrival = random.random() < late_arrival_rate
+            if is_late_arrival:
+                late_delay_sec = random.uniform(*late_delay_min_max)
+                created_ts = exact_event_ts + timedelta(seconds=late_delay_sec)
+            else:
+                created_ts = exact_event_ts
+
+            # Implement current_playback_offset_seconds logic
+            if event_type in ["impress", "view"]:
+                movie_id = None
+                playback_id = None
+                playback_start_ts = None
+                current_playback_offset_seconds = None
+
+            elif event_type == "click":
+                movie_id = random.choice(movie_ids)
+
+                # Auto-incremental playback ID
+                playback_id = f"playback_{playback_counter}"
+                playback_counter += 1
+                playback_start_ts = None
+                current_playback_offset_seconds = None
+            else:
+                # Video events require valid playback attributes
+                movie_id = random.choice(movie_ids)
+
+                # Auto-incremental playback ID
+                playback_id = f"playback_{playback_counter}"
+                playback_counter += 1
+                
+                # 1 to 5 seconds buffering/loading delay after the event is triggered
+                playback_start_ts = (event_ts + timedelta(seconds=random.randint(1, 5))).isoformat()
+                
+                runtime_seconds = movie_runtimes.get(movie_id, 7200)
+
+                if event_type == "complete":
+                    current_playback_offset_seconds = runtime_seconds
                 else:
-                    created_ts = event_ts
+                    current_playback_offset_seconds = random.randint(0, runtime_seconds)
 
-                if event_type in ["impress", "view", "click"]:
-                    # leave the movie_id, playback_id, playback_start_ts, duration_watch_seconds as null for impression and view events
-                    movie_id = None
-                    playback_id = None
-                    playback_start_ts = None
-                    duration_watch_seconds = None
+            events.append(
+                {
+                    "event_id": event_id,
+                    "event_type": event_type,
+                    "event_ts": exact_event_ts.isoformat(),
+                    "created_ts": created_ts.isoformat(),
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "movie_id": movie_id,
+                    "playback_id": playback_id,
+                    "playback_start_ts": playback_start_ts,
+                    "current_playback_offset_seconds": current_playback_offset_seconds,
+                }
+            )
 
-                elif event_type in ["complete"]:
-                    # for complete events, we need to make sure the duration_watch_seconds is equal to the runtime of the movie to make it realistic
-                    movie_id = random.randint(1, N_MOVIES)
-                    playback_id = f"playback_{random.randint(1, 100000)}"
-                    playback_start_ts = event_ts.isoformat()
-                    runtime_seconds = movie_runtimes.get(
-                        movie_id, 7200
-                    )  # default to 2 hours if not found
-                    duration_watch_seconds = runtime_seconds
+        # Print progress every 60 minutes (1 hour) to reduce terminal spam
+        if minute_offset % 60 == 0:
+            print(f"Generated events for minute offset {minute_offset} ({event_ts.strftime('%Y-%m-%d %H:%M:%S')}). Total: {len(events)}")
 
-                else:
-                    movie_id = random.randint(1, N_MOVIES)
-                    playback_id = f"playback_{random.randint(1, 100000)}"
-                    playback_start_ts = event_ts.isoformat()
-                    runtime_seconds = movie_runtimes.get(
-                        movie_id, 7200
-                    )  # default to 2 hours if not found
-                    duration_watch_seconds = random.randint(0, runtime_seconds)
+    # Generate Duplicate Events
+    n_duplicates = int(len(events) * duplicate_rate)
+    duplicate_events_sample = random.sample(events, n_duplicates)
 
-                events.append(
-                    {
-                        "event_id": event_id,
-                        "event_type": event_type,
-                        "event_ts": event_ts.isoformat(),
-                        "created_ts": created_ts.isoformat(),
-                        "user_id": user_id,
-                        "session_id": session_id,
-                        "movie_id": movie_id,
-                        "playback_id": playback_id,
-                        "playback_start_ts": playback_start_ts,
-                        "duration_watch_seconds": duration_watch_seconds,
-                    }
-                )
-
-                # time.sleep(delay)  # simulate real-time event generation
-
-        else:
-            # generate baseline events at a lower rate
-            events_per_min = base_events_per_min
-            delay = 60 / events_per_min  # delay between events in seconds
-
-            for i in range(events_per_min):
-                event_id = f"event_{minute_offset}_{i}"
-                user_id = random.randint(1, N_USERS)
-                event_type = random.choice(EVENT_TYPES)
-                session_id = f"session_{random.randint(1, 100000)}"
-
-                if is_late_arrival:
-                    late_delay_sec = random.uniform(*late_delay_min_max)
-                    created_ts = event_ts + timedelta(seconds=late_delay_sec)
-                else:
-                    created_ts = event_ts
-
-                if event_type in ["impress", "view", "click"]:
-                    # leave the movie_id, playback_id, playback_start_ts, duration_watch_seconds as null for impression and view events
-                    movie_id = None
-                    playback_id = None
-                    playback_start_ts = None
-                    duration_watch_seconds = None
-
-                elif event_type in ["complete"]:
-                    # for complete events, we need to make sure the duration_watch_seconds is equal to the runtime of the movie to make it realistic
-                    movie_id = random.randint(1, N_MOVIES)
-                    playback_id = f"playback_{random.randint(1, 100000)}"
-                    playback_start_ts = event_ts.isoformat()
-                    runtime_seconds = movie_runtimes.get(
-                        movie_id, 7200
-                    )  # default to 2 hours if not found
-                    duration_watch_seconds = runtime_seconds
-
-                else:
-                    movie_id = random.randint(1, N_MOVIES)
-                    playback_id = f"playback_{random.randint(1, 100000)}"
-                    playback_start_ts = event_ts.isoformat()
-                    runtime_seconds = movie_runtimes.get(
-                        movie_id, 7200
-                    )  # default to 2 hours if not found
-                    duration_watch_seconds = random.randint(0, runtime_seconds)
-
-                events.append(
-                    {
-                        "event_id": event_id,
-                        "event_type": event_type,
-                        "event_ts": event_ts.isoformat(),
-                        "created_ts": created_ts.isoformat(),
-                        "user_id": user_id,
-                        "session_id": session_id,
-                        "movie_id": movie_id,
-                        "playback_id": playback_id,
-                        "playback_start_ts": playback_start_ts,
-                        "duration_watch_seconds": duration_watch_seconds,
-                    }
-                )
-
-                # time.sleep(delay)  # simulate real-time event generation
-        print(
-            f"Generated events for minute offset {minute_offset} ({event_ts.strftime('%Y-%m-%d %H:%M:%S')})"
-        )
-        print(f"Total events generated so far: {len(events)} \n")
-
-    # add some duplicates to simulate duplicate events in the stream
-    n_duplicates = int(len(events) * (duplicate_rate_stream / 100))
-    duplicate_events = random.sample(events, n_duplicates)
-
-    # must search for 1 and 3 minutes after the original event and find the right place to insert the duplicate event to make it realistic
-    for dup_event in duplicate_events:
+    for original_event in duplicate_events_sample:
+        # Must use .copy() otherwise you mutate the original event in the list
+        dup_event = original_event.copy() 
+        
+        # 1. Calculate the delay strictly once for this duplicate
+        delay_seconds = random.randint(duplicate_delay_min_max[0], duplicate_delay_min_max[1])
+        delay_delta = timedelta(seconds=delay_seconds)
+        
+        # 2. Shift the event_ts forward
         original_event_ts = datetime.fromisoformat(dup_event["event_ts"])
-        duplicate_event_ts = original_event_ts + timedelta(
-            seconds=random.randint(
-                60, 180
-            )  # duplicate event occurs 1-3 minutes after the original event
-        )  # duplicate event occurs 1-3 minutes after the original event
-        dup_event["event_id"] = f"{dup_event['event_id']}_dup"
-        dup_event["event_ts"] = duplicate_event_ts.isoformat()
+        dup_event["event_ts"] = (original_event_ts + delay_delta).isoformat()
+        
+        # 3. Shift the created_ts forward by the exact same amount
+        original_created_ts = datetime.fromisoformat(dup_event["created_ts"])
+        dup_event["created_ts"] = (original_created_ts + delay_delta).isoformat()
+
         events.append(dup_event)
 
-    # sort events by event_ts to simulate the order they would arrive in the stream
+    # Sort events chronologically to simulate a real stream
     events.sort(key=lambda x: x["event_ts"])
-    # write events to a jsonl file
-    output_file = os.path.join(
-        OUTPUT_DIR_STREAMING,
-        f"streaming_events_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl",
-    )
-    with open(output_file, "w") as f:
-        for event in events:
-            f.write(json.dumps(event) + "\n")
-    print(f"Generated {len(events)} streaming events and saved to {output_file}")
+    
+    # Convert list of dictionaries into a pandas DataFrame
+    df_events = pd.DataFrame(events)
 
+    # make sure user a will have session 1 before having session 2
+    df_events["session_sequence"] = df_events.groupby("user_id")["session_id"].transform(lambda x: pd.factorize(x)[0] + 1)
+    
+    # Build the final, clean session_id string
+    df_events["session_id"] = "user_" + df_events["user_id"].astype(str) + "_sess_" + df_events["session_sequence"].astype(str)
+    
+    # Drop the temporary sequence column
+    df_events.drop(columns=["session_sequence"], inplace=True)
 
-def main():
-    hours_history = HOURS_HISTORY
-    base_events_per_min = BASELINE_EVENT_RATE_PER_MINUTE
-    burst_multiplier = BURST_EVENT_RATE_PER_MINUTE // BASELINE_EVENT_RATE_PER_MINUTE
-    burst_windows = [
-        f"{BURST_START_HOUR_1:02d}:00-{(BURST_START_HOUR_1 + BURST_DURATION_MINUTES // 60) % 24:02d}:{BURST_DURATION_MINUTES % 60:02d}",
-        f"{BURST_START_HOUR_2:02d}:00-{(BURST_START_HOUR_2 + BURST_DURATION_MINUTES // 60) % 24:02d}:{BURST_DURATION_MINUTES % 60:02d}",
-    ]
-    late_arrival_rate = 0.1  # 10% of events are late
-    late_delay_min_max = (LATE_DELAY_MIN_SEC, LATE_DELAY_MAX_SEC)
-    duplicate_rate_stream = 1.5  # 1.5% of events are duplicates
-
-    generate_streaming_events(
-        hours_history,
-        base_events_per_min,
-        burst_multiplier,
-        burst_windows,
-        late_arrival_rate,
-        late_delay_min_max,
-        duplicate_rate_stream,
-    )
-
-
+    print("\n Streaming event data: ")
+    print(df_events.head().to_string())
+    print(f"\nGenerated {len(df_events)} streaming events.")
+    
+    return df_events
+    
 if __name__ == "__main__":
-    main()
+    
+    # Setup the environments
+    np.random.seed(RANDOM_SEED)
+    os.makedirs(STREAMING_DATA_DIR, exist_ok=True)
+
+    # Read df_users and df_movies
+    df_users = pd.read_parquet(f"{OFFLINE_DATA_DIR}/users.parquet")
+    df_movies = pd.read_parquet(os.path.join(OFFLINE_DATA_DIR, "movies"))
+
+    # Execution parameters 
+    base_date = pd.Timestamp("2026-07-07")  # Set static date for reproducible, one day ahead of the date inside the offline data
+    hours_history = 24
+    base_events_per_min = 100
+    burst_multiplier = 30
+    burst_windows = ["12:00-12:20", "20:00-20:20"]
+    late_arrival_rate = 0.12
+    late_delay_min_max = [5, 45]
+    duplicate_rate = 0.02
+    duplicate_delay_min_max = [60, 180]
+
+    df_events = generate_streaming_events(
+        base_date=base_date,
+        df_users=df_users,
+        df_movies=df_movies,
+        hours_history=hours_history,
+        base_events_per_min=base_events_per_min,
+        burst_multiplier=burst_multiplier,
+        burst_windows=burst_windows,
+        late_arrival_rate=late_arrival_rate,
+        late_delay_min_max=late_delay_min_max,
+        duplicate_rate=duplicate_rate,
+        duplicate_delay_min_max = duplicate_delay_min_max,
+    )
+
+    output_file = os.path.join(STREAMING_DATA_DIR, f"streaming_events.jsonl")
+
+    save_events_to_jsonl(df_events, output_file)
