@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "delta-spark>=3.2.0",
     "deltalake>=1.6.0",
+    "dotenv>=0.9.9",
     "minio>=7.2.20",
     "numpy>=2.4.6",
     "pandas>=2.2.0,<2.3",

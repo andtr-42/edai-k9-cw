@@ -9,7 +9,7 @@ import pyarrow.dataset as ds
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-OFFLINE_DATA_DIR = "../../data/offline/"
+OFFLINE_DATA_DIR = "data/offline/"
 RANDOM_SEED = 42
 
 USER_CONFIG = {
@@ -105,7 +105,19 @@ def write_parquet(
     df: pd.DataFrame, output_path: str, partition_cols: list[str] | None = None
 ) -> None:
     """Write a DataFrame to Parquet format, optionally partitioning by specified columns."""
-    tbl = pa.Table.from_pandas(df)
+
+    # Create a shallow copy to prevent side effects on the source DataFrame
+    df_storage = df.copy()
+
+    # Identify and downcast any nanosecond timestamp columns safely
+    for col in df_storage.columns:
+        if pd.api.types.is_datetime64_ns_dtype(df_storage[col]):
+            # .dt accessor works perfectly here because df_storage[col] is a Series
+            df_storage[col] = df_storage[col].astype("datetime64[us]")
+
+    # Convert the cleaned DataFrame into a PyArrow Table
+    tbl = pa.Table.from_pandas(df_storage)
+    # tbl = pa.Table.from_pandas(df)
 
     if partition_cols:
         hive_partitioning = ds.partitioning(

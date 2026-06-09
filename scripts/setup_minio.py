@@ -1,40 +1,32 @@
 from minio import Minio
-
-BRONZE_BUCKET_NAME = "bronze-bucket"
-SILVER_BUCKET_NAME = "silver-bucket"
-
-MINIO_ENDPOINT = "localhost:9000"
-MINIO_ACCESS_KEY = "minioadmin"
-MINIO_SECRET_KEY = "minioadmin"
-
-client = Minio(
+from src.config import (
     MINIO_ENDPOINT,
-    access_key=MINIO_ACCESS_KEY,
-    secret_key=MINIO_SECRET_KEY,
-    secure=False,
+    MINIO_ACCESS_KEY,
+    MINIO_SECRET_KEY,
+    BRONZE_BUCKET,
+    SILVER_BUCKET,
+    GOLD_BUCKET,
 )
 
-
-def create_bronze_bucket():
-    if not client.bucket_exists(BRONZE_BUCKET_NAME):
-        client.make_bucket(BRONZE_BUCKET_NAME)
-        print(f"Bucket '{BRONZE_BUCKET_NAME}' created successfully.")
+def create_bucket(client: Minio, bucket_name: str) -> None:
+    if not client.bucket_exists(bucket_name):
+        client.make_bucket(bucket_name)
+        print(f"Bucket '{bucket_name}' created successfully.")
     else:
-        print(f"Bucket '{BRONZE_BUCKET_NAME}' already exists.")
-
-
-def create_silver_bucket():
-    if not client.bucket_exists(SILVER_BUCKET_NAME):
-        client.make_bucket(SILVER_BUCKET_NAME)
-        print(f"Bucket '{SILVER_BUCKET_NAME}' created successfully.")
-    else:
-        print(f"Bucket '{SILVER_BUCKET_NAME}' already exists.")
-
+        print(f"Bucket '{bucket_name}' already exists.")
 
 def main():
-    create_bronze_bucket()
-    create_silver_bucket()
 
+    client = Minio(
+        MINIO_ENDPOINT,
+        access_key=MINIO_ACCESS_KEY,
+        secret_key=MINIO_SECRET_KEY,
+        secure=False,
+    )
+    
+    create_bucket(client, BRONZE_BUCKET)
+    create_bucket(client, SILVER_BUCKET)
+    create_bucket(client, GOLD_BUCKET)
 
 if __name__ == "__main__":
     main()

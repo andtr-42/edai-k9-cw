@@ -1,4 +1,3 @@
-
 ### Offline Data Generation
 
 1. User data:
