@@ -1,0 +1,23 @@
+[project]
+name = "edai-k9-coursework"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "delta-spark>=3.2.0",
+    "deltalake>=1.6.0",
+    "minio>=7.2.20",
+    "numpy>=2.4.6",
+    "pandas>=2.2.0,<2.3",
+    "pyarrow>=24.0.0",
+    "pyspark==3.5.0",
+]
+
+[tool.ruff]
+line-length = 88
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.16",
+]
