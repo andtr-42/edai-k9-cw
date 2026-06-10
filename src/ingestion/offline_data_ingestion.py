@@ -93,9 +93,9 @@ if __name__ == "__main__":
     datasets = {
         "raw_users": {"path": "users.parquet", "partition_cols": None},
         "raw_movies": {"path": "movies", "partition_cols": None},
-        "raw_playbacks": {"path": "playbacks", "partition_cols": ["playback_date"]},
-        "raw_ratings": {"path": "ratings", "partition_cols": ["rating_date"]},
-        "raw_payment_attempts": {"path": "payments", "partition_cols": ["payment_date"]}
+        "raw_playbacks": {"path": "playbacks", "partition_cols": None}, # change from ["playback_date"] for flat table
+        "raw_ratings": {"path": "ratings", "partition_cols": None}, # change from ["rating_date"] for flat table
+        "raw_payment_attempts": {"path": "payments", "partition_cols": None} # change from ["rating_date"] for flat table
     }
 
     for topic, config in datasets.items():
