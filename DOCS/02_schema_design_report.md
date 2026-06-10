@@ -20,7 +20,7 @@
 | Dimension | Grain | Key Columns |
 |-------|-------|------------|
 | dim_user | one per user | user_key (SK), user_id (BK), gender, age, subscription_type, signup_ts |
-| dim_movie | one per movie | movie_key (SK), movie_id (BK), genre, country, runtime, language, release_year |
+| dim_movie | one per movie | movie_key (SK), movie_id (BK), genre, country, runtime, language, release_year, created_at |
 | dim_date | one per date | date_key (yyyymmdd), calendar_date, day_of_week, month, year, is_weekend |
 | dim_time | one per second | time_key (hhmmss), time_of_day, hour, minute, second, am_pm, day_part |
 | dim_rating | one per user per movie | rating_key (SK), rating (level from 1 to 5)
