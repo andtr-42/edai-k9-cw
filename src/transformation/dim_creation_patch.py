@@ -130,7 +130,7 @@ def generate_dim_date(base_date: pd.Timestamp, days_history: int, gold_bucket: s
     """Generates and writes a date dimension using Pandas and NumPy backward from an anchor point."""
     print(f"Generating dim_date with Pandas: {days_history} days back from {base_date.strftime('%Y-%m-%d')}...")
     
-    start_date = base_date - pd.Timedelta(days=days_history - 1)
+    start_date = base_date - pd.Timedelta(days=days_history)
     dates = pd.date_range(start=start_date, end=base_date, freq='D')
     
     df = pd.DataFrame({"calendar_date": dates})
