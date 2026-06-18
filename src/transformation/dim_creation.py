@@ -136,7 +136,6 @@ def generate_dim_date(base_date: pd.Timestamp, days_history: int, gold_bucket: s
     write_deltalake(target_path, df, mode="overwrite", storage_options=get_storage_options())
     print(f"Successfully wrote dim_date to {target_path} using Pandas.")
 
-
 def generate_dim_time(gold_bucket: str) -> None:
     """Generates and writes second-by-second lookup data using Pandas, NumPy and global dimensions."""
     print("Generating dim_time with Pandas & NumPy globals...")
@@ -245,8 +244,8 @@ if __name__ == "__main__":
     # Process dim_date
     generate_dim_date(base_date=pd.Timestamp("2026-06-07"), days_history=180, gold_bucket=GOLD_BUCKET)
 
-    # Process dim_time
-    generate_dim_time(gold_bucket=GOLD_BUCKET)
+    # Process dim_time (removed from the design)
+    # generate_dim_time(gold_bucket=GOLD_BUCKET)
 
     # Process dim_rating
     generate_dim_rating(gold_bucket=GOLD_BUCKET)

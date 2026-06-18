@@ -22,7 +22,7 @@
 | dim_user | one per user | user_key (SK), user_id (BK), gender, age, subscription_type, signup_ts |
 | dim_movie | one per movie | movie_key (SK), movie_id (BK), genre, country, runtime, language, release_year, created_at |
 | dim_date | one per date | date_key (yyyymmdd), calendar_date, day_of_week, month, year, is_weekend |
-| dim_time | one per second | time_key (hhmmss), time_of_day, hour, minute, second, am_pm, day_part |
+| dim_time (removed )| one per second | time_key (hhmmss), time_of_day, hour, minute, second, am_pm, day_part |
 | dim_rating | one per user per movie | rating_key (SK), rating (level from 1 to 5)
 | dim_payment_method | one per method | payment_method_key (SK), payment_method (name) |
 
@@ -33,19 +33,19 @@
 ## 3. Fact Tables
 
 ### 3.1 fact_playback
-**Grain:** one per playback. **Keys:** user_key, movie_key, playback_date_key, click_date_key, click_time_key, start_date_key, start_time_key, stop_date_key, stop_time_key
-**Other attribute columns:** click_ts, start_ts, stop_ts (?), duration_watched_seconds, completion_rate 
+**Grain:** one per playback. **Keys:** playback_id, user_key, movie_key, playback_date_key, click_date_key, start_date_key, stop_date_key
+**Other attribute columns:** click_ts, click_hour, start_ts, start_hour, , stop_ts (?), stop_hour duration_watched_seconds, completion_rate 
 **Measures:** (?)
 **Note:** Handles skewness, high cardinality and duplicate playbacks. 
 
 ### 3.2 fact_rating
-**Grain:** one per movie per user. **Keys:** user_key, movie_key, rating_date_key, rating_time_key, rating_key
-**Other attribute columns:** rating_ts (?)
+**Grain:** one per movie per user. **Keys:** rating_id, user_key, movie_key, rating_date_key, rating_key
+**Other attribute columns:** rating_ts, rating_hour
 **Measures:** (?)
 **Note:** Schema evolution on the rating_ts 
 
 ### 3.3 fact_payment_attempt
-**Grain:** one per payment. **Keys:** user_key, payment_date_key, payment_method_key.  
+**Grain:** one per payment. **Keys:** payment_attempt_id, user_key, payment_date_key, payment_method_key.  
 **Measures:** amount, is_payment_success (0/1), is_payment_failed (0/1).
 
 ## 4. OBT Table
