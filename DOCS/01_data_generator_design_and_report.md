@@ -70,7 +70,6 @@ Compute from user historical records and clickstream event data:
 - `f_user_avg_duration_watched_seconds_90d` - average watch duration value
 - `f_user_distinct_genre_90d` - genre diversity
 - `f_user_payment_fail_rate_90d` - payment failure ratio
-- `f_user_preferred_watch_window` - preferred watch window
 - `f_user_avg_completion_rate_90d` - avg completion rate
 
 **Streaming (rolling windows):**

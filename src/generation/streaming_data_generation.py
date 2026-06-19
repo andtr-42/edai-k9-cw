@@ -4,8 +4,9 @@ import os
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone, timedelta
-from src.generation.offline_data_generation import OFFLINE_DATA_DIR
+# from src.generation.offline_data_generation import OFFLINE_DATA_DIR
 
+OFFLINE_DATA_DIR = "../../data/offline/"
 STREAMING_DATA_DIR = "../../data/streaming/"
 RANDOM_SEED = 42
 MINUTES_PER_HOUR = 60
@@ -206,7 +207,8 @@ if __name__ == "__main__":
     df_movies = pd.read_parquet(os.path.join(OFFLINE_DATA_DIR, "movies"))
 
     # Execution parameters 
-    base_date = pd.Timestamp("2026-07-07")  # Set static date for reproducible, one day ahead of the date inside the offline data
+    # generate data backward, so that it will generate data for the 2026-06-08
+    base_date = pd.Timestamp("2026-06-09")  # Set static date for reproducible, one day ahead of the date inside the offline data
     hours_history = 24
     base_events_per_min = 100
     burst_multiplier = 30

@@ -1,3 +1,4 @@
+import pandas as pd
 from pyspark.sql import DataFrame as SparkDataFrame, SparkSession
 from pyspark.sql import functions as F
 from src.config import (
@@ -15,52 +16,75 @@ def extract_from_lakehouse(spark: SparkSession, bucket_name: str, topic: str) ->
     return spark.read.format("delta").load(minio_path)
 
 # =============================================================================
-# OBT TABLE TRANSFORMATIONS
+# FEATURE STORE TRANSFORMATIONS
 # =============================================================================
 
-def transform_obt_playback_performance(
-    fact_playback_df: SparkDataFrame,
+def transform_feat_user_90d(
+    obt_playback_df: SparkDataFrame,
+    fact_payment_df: SparkDataFrame,
     dim_user_df: SparkDataFrame,
-    dim_movie_df: SparkDataFrame,
-    dim_date_df: SparkDataFrame
+    target_date_str: str
 ) -> SparkDataFrame:
     """
-    Assembles the One Big Table (OBT) for playback performance.
-    Joins the fact table with its corresponding dimensions using Gold surrogate keys.
+    Calculates the 90-day rolling window features for users up to the target_date.
+    Applies Spark optimizations for skewness, cardinality, and outliers.
     """
-    return fact_playback_df.alias("fp") \
-        .join(dim_user_df.alias("du"), F.col("fp.user_key") == F.col("du.user_key"), "inner") \
-        .join(dim_movie_df.alias("dm"), F.col("fp.movie_key") == F.col("dm.movie_key"), "inner") \
-        .join(dim_date_df.alias("dd"), F.col("fp.start_date_key") == F.col("dd.date_key"), "inner") \
-        .select(
-            # Core Identifiers
-            F.col("fp.playback_id"),
-            F.col("du.user_id"),
-            F.col("dm.movie_id"),
-            
-            # Temporal Context (Driven by playback start time)
-            F.col("dd.calendar_date"),
-            F.col("dd.day_of_week"),
-            F.col("dd.is_weekend"),
-            F.col("fp.start_hour"),
-            
-            # User Demographics
-            F.col("du.age"),
-            F.col("du.gender"),
-            F.col("du.subscription_type"),
-            F.col("du.signup_ts"),
-            
-            # Content Attributes
-            F.col("dm.genre"),
-            F.col("dm.country"),
-            F.col("dm.runtime_seconds"),
-            F.col("dm.language"),
-            F.col("dm.release_year"),
-            
-            # Performance Measures
-            F.col("fp.duration_watched_seconds"),
-            F.col("fp.completion_rate")
-        )
+    # 1. Define the 90-day rolling window boundaries
+    end_date = F.to_date(F.lit(target_date_str))
+    start_date = F.date_sub(end_date, 90)
+
+    # 2. Playback Features (Using OBT for pre-joined genre & dates)
+    playbacks_90d = obt_playback_df.filter(
+        (F.col("calendar_date") > start_date) & 
+        (F.col("calendar_date") <= end_date)
+    ).groupBy("user_id").agg(
+        # AQE handles skewness for basic counts automatically
+        F.count("playback_id").cast("int").alias("f_user_total_playbacks_90d"),
+        
+        # Percentile Approx (Median) to ignore users leaving videos paused for days
+        F.expr("percentile_approx(duration_watched_seconds, 0.5)").alias("f_user_avg_duration_watched_seconds_90d"),
+        F.expr("percentile_approx(completion_rate, 0.5)").alias("f_user_avg_completion_rate_90d"),
+        
+        # HyperLogLog for high cardinality distinct counts (5% allowed error)
+        F.approx_count_distinct("genre", 0.05).cast("int").alias("f_user_distinct_genre_90d")
+    )
+
+    # 3. Payment Features (Using Fact + Dim User to map keys to user_id)
+    payment_base = fact_payment_df.join(
+        dim_user_df.select("user_key", "user_id"), 
+        on="user_key", 
+        how="inner"
+    )
+    
+    payments_90d = payment_base.withColumn(
+        "payment_date", 
+        F.to_date(F.col("payment_date_key").cast("string"), "yyyyMMdd")
+    ).filter(
+        (F.col("payment_date") > start_date) & 
+        (F.col("payment_date") <= end_date)
+    ).groupBy("user_id").agg(
+        # Two-Phase Aggregation: Native math allows Spark to partial-sum on workers first
+        (F.sum("is_payment_failed") / F.count("payment_attempt_id")).cast("double").alias("f_user_payment_fail_rate_90d")
+    )
+
+    # 4. Combine All Features
+    # Full outer join ensures users who only viewed OR only paid are included
+    combined_features = playbacks_90d.join(payments_90d, on="user_id", how="full_outer")
+
+    # 5. Impute Nulls and Append Required Metadata Columns
+    final_features = combined_features.fillna({
+        "f_user_total_playbacks_90d": 0,
+        "f_user_avg_duration_watched_seconds_90d": 0.0,
+        "f_user_avg_completion_rate_90d": 0.0,
+        "f_user_distinct_genre_90d": 0,
+        "f_user_payment_fail_rate_90d": 0.0
+    }).withColumn(
+        "event_timestamp", F.to_timestamp(F.lit(target_date_str))
+    ).withColumn(
+        "created_ts", F.current_timestamp()
+    )
+
+    return final_features
 
 # =============================================================================
 # EXECUTABLE RUNTIME DRIVER
@@ -70,7 +94,7 @@ if __name__ == "__main__":
     spark = (
         SparkSession.builder
         .master("local[*]")
-        .appName("compile_obt_playback_performance")
+        .appName("compile_feat_user_90d")
         .config("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MICROS")
         .config("spark.jars.packages", f"io.delta:delta-spark_2.12:{DELTA_VERSION},org.apache.hadoop:hadoop-aws:{HADOOP_VERSION}")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -81,46 +105,44 @@ if __name__ == "__main__":
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+        
+        # --- EXPLICIT OPTIMIZATIONS ---
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+        .config("spark.sql.adaptive.skewJoin.enabled", "true")
+        
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("WARN")
 
-    print("--- Loading Gold Tables Into Engine Memory ---")
-    
-    # Load Facts
-    gold_fact_playback = extract_from_lakehouse(spark, GOLD_BUCKET, "fact_playback")
-    
-    # Load Dimensions
-    gold_dim_user = extract_from_lakehouse(spark, GOLD_BUCKET, "dim_user")
-    gold_dim_movie = extract_from_lakehouse(spark, GOLD_BUCKET, "dim_movie")
-    gold_dim_date = extract_from_lakehouse(spark, GOLD_BUCKET, "dim_date")
+    print("--- Loading Base Tables For Feature Generation ---")
+    obt_playback = extract_from_lakehouse(spark, GOLD_BUCKET, "obt_playback_performance")
+    fact_payment = extract_from_lakehouse(spark, GOLD_BUCKET, "fact_payment_attempt")
+    dim_user = extract_from_lakehouse(spark, GOLD_BUCKET, "dim_user")
 
-    # Run this right before the OBT inner join logic
-    orphaned_dates = gold_fact_playback.join(
-        gold_dim_date,
-        gold_fact_playback["start_date_key"] == gold_dim_date["date_key"],
-        "left_anti"
-    )
+    # In a production environment like Airflow, this date is passed dynamically 
+    # (e.g., {{ ds }}). For local backfilling, you can iterate over a list of dates.
+    target_dates_to_compute = ["2026-06-16", "2026-06-17", "2026-06-18"]
 
-    print(f"Dropped rows: {orphaned_dates.count()}")
-    orphaned_dates.select("start_date_key", "click_ts", "start_ts").show(10)
+    target_path = f"s3a://{GOLD_BUCKET}/features/feat_user_90d"
 
-    
-    print("--- Starting OBT Compilation ---")
+    print("--- Starting Feature Compilation ---")
+    for process_date in target_dates_to_compute:
+        print(f"Computing features for anchor date: {process_date}...")
+        
+        daily_features_df = transform_feat_user_90d(
+            obt_playback, fact_payment, dim_user, process_date
+        )
+        
+        # Partition by event_timestamp so Feast can efficiently prune dates when retrieving history
+        daily_features_df.write \
+            .format("delta") \
+            .mode("append") \
+            .partitionBy("event_timestamp") \
+            .save(target_path)
+            
+        print(f"Successfully appended features for {process_date}.")
 
-    print("Compiling obt_playback_performance...")
-    obt_playback = transform_obt_playback_performance(
-        gold_fact_playback, 
-        gold_dim_user, 
-        gold_dim_movie, 
-        gold_dim_date
-    )
-    
-    print(f"Number of rows in OBT table: {obt_playback.count()}")
-    
-    # Write to Gold Bucket (Overwrite is often used for OBTs if fully rebuilt, otherwise append/merge)
-    target_path = f"s3a://{GOLD_BUCKET}/topics/obt_playback_performance"
-    obt_playback.write.format("delta").mode("overwrite").save(target_path)
+    print("--- Feature Store Compilation Finished Safely ---")
 
-    print("--- OBT Compilation Finished Safely ---")
-    
+
