@@ -12,8 +12,8 @@ DELTA_VERSION = "3.2.0"       # Matches PySpark 3.5.x
 HADOOP_VERSION = "3.3.4"
 
 # --- Static Project Paths ---
-OFFLINE_DATA_PATH = BASE_DIR / "data" / "offline"
-STREAMING_DATA_PATH = BASE_DIR / "data" / "streaming"
+OFFLINE_DATA_PATH = BASE_DIR / "output" / "offline"
+STREAMING_DATA_PATH = BASE_DIR / "output" / "streaming"
 
 # MinIO Config
 BRONZE_BUCKET = os.getenv("BRONZE_BUCKET", "bronze-bucket")

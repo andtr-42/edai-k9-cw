@@ -1,5 +1,5 @@
 0
-51
+52
 __consumer_offsets 13 0
 __consumer_offsets 46 0
 __consumer_offsets 9 0
@@ -13,7 +13,7 @@ __consumer_offsets 38 0
 __consumer_offsets 1 0
 __consumer_offsets 34 0
 __consumer_offsets 16 0
-_schemas 0 4
+_schemas 0 6
 __consumer_offsets 45 0
 __consumer_offsets 12 0
 __consumer_offsets 41 0
@@ -21,7 +21,7 @@ __consumer_offsets 24 0
 __consumer_offsets 20 0
 __consumer_offsets 49 0
 __consumer_offsets 0 0
-__consumer_offsets 29 5
+__consumer_offsets 29 7
 __consumer_offsets 25 0
 __consumer_offsets 8 0
 __consumer_offsets 37 0
@@ -29,6 +29,7 @@ __consumer_offsets 4 0
 __consumer_offsets 33 0
 __consumer_offsets 15 0
 __consumer_offsets 48 0
+streaming_movie_events 0 0
 __consumer_offsets 11 0
 __consumer_offsets 44 0
 __consumer_offsets 23 0
