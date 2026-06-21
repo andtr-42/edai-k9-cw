@@ -1,5 +1,3 @@
-
-
 - Pipeline Orchestration: Airflow 
 - Pipeline Governance: DataHub
 - (Data Sources) - Offline historical data -> Ingestion Layer (Spark Batch Processing) -> Bronze Layer (Lakehouse Storage with MinIO, Delta Lake, Hive-Metastore) -> Transformation Layer 1 (Clean, dedup with Spark) -> Silver Layer (Lakehouse Storage with MinIO, Delta Lake, Hive-Metastore) -> Transformation Layer 2 (Feature engineer, aggregates with Spark) -> Gold Layer (Dim, Fact, OBT Warehouse with ClickHouse) -> Feature Store (Feast)

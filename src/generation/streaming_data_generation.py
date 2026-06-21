@@ -6,8 +6,8 @@ import pandas as pd
 from datetime import datetime, timezone, timedelta
 # from src.generation.offline_data_generation import OFFLINE_DATA_DIR
 
-OFFLINE_DATA_DIR = "../../data/offline/"
-STREAMING_DATA_DIR = "../../data/streaming/"
+OFFLINE_DATA_DIR = "../../output/offline/"
+STREAMING_DATA_DIR = "../../output/streaming/"
 RANDOM_SEED = 42
 MINUTES_PER_HOUR = 60
 

@@ -9,7 +9,7 @@ import pyarrow.dataset as ds
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-OFFLINE_DATA_DIR = "data/offline/"
+OFFLINE_DATA_DIR = "output/offline/"
 RANDOM_SEED = 42
 
 USER_CONFIG = {

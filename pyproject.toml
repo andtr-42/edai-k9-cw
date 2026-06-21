@@ -3,16 +3,23 @@ name = "edai-k9-coursework"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
+    "apache-beam[gcp,tfrecord]==2.72.0",
+    "apache-flink-libraries==2.2.0",
+    "avro==1.12.1",
+    "cloudpickle==3.1.2",
     "delta-spark>=3.2.0",
     "deltalake>=1.6.0",
     "dotenv>=0.9.9",
     "minio>=7.2.20",
     "numpy>=2.4.6",
     "pandas>=2.2.0,<2.3",
-    "pyarrow>=24.0.0",
+    "pemja==0.5.5",
+    "py4j==0.10.9.7",
+    "pyarrow==20.0.0",
     "pyspark==3.5.0",
+    "ruamel-yaml==0.19.1",
 ]
 
 [tool.ruff]

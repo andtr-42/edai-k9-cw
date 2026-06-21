@@ -75,7 +75,7 @@ Compute from user historical records and clickstream event data:
 **Streaming (rolling windows):**
 - `f_stream_views_30m` - count views movie details
 - `f_stream_clicks_30m` - count clicks to start the movie
-- `f_stream_views_to_clicks_conversion_rate_30m` - calculate views to clicks ratio
+- `f_stream_views_to_clicks_conversion_rate_30m` - calculate views description to clicks ratio
 - `f_stream_distinct_movie_starts_30m` - count distinct movies' starts to detect binge watch activities
 - `f_stream_burst_activity_flag` - burst period traffic
 
