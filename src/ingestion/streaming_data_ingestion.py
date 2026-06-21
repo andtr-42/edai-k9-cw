@@ -81,11 +81,8 @@ def main():
     total_events = len(event_cache)
 
     try:
-        while True:
-            # 1. Fetch event from memory first
-            event = event_cache[event_index]
-            event_index = (event_index + 1) % total_events
-
+        for event_index, event in enumerate(event_cache):
+            
             # 2. Determine Rate based on the event's actual timestamp
             if is_burst_period(event["event_ts"]):
                 current_rate = BURST_RATE
