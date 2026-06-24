@@ -28,7 +28,7 @@ The goal is to support downstream ingestion, transformation, and feature enginee
 **Compulsory:**
 - **Skew**: duration_watched_seconds skew some playbacks are played 0.0 - 0.15 of runtime and some playbacks are played 0.8-1.0 of runtime, 80% movies in Drama genre.
 - **High cardinality**: user_id, movie_id, playback_id are mostly unique.
-- **Schema evolution**: old partitions (60% of timeline) missing country for movies table and (20% of timeline) rating_ts for ratings table.
+- **Schema evolution**: old partitions (60% of timeline) missing country for movies table.
 
 **Optional chosen:** 
 - 2% duplicate rate in playbacks (same user_id, movie_id, start_ts repeated).

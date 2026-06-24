@@ -1,15 +1,42 @@
-# EDAI-K9 CourseWork 
+# Movie Streaming Data Pipeline 
 
-### Understand the requirements
+## 1. Business Domain Overview
 
-1. Data Generator Design
-- Design offline and streaming datasets with clear grain and schema.
-- Inject realistic data issues (required + optional).
-- Keep generator configurable by parameters.
-- Implement generator code and produce sample outputs.
+This project simulates a medium-size movie streaming platform. The generator produces:
 
-2. Gold Layer Schema Design
-- Design business-ready Gold tables (facts, dimensions, optional OBT/aggregates).
-- Define refresh SLAs and data quality checks.
-- Define feature tables for ML with point-in-time correctness and dedup strategy.
-- Implement schema/table creation and transformation code.
+- Offline historical/reference data (Parquet)
+- Streaming real-time events (JSON)
+
+The goal is to support downstream ingestion, transformation, and feature engineering while intentionally injecting realistic data quality and processing challenges.
+
+## Table of Contents 
+
+## System Architecture
+
+## Getting started 
+
+Clone the repo 
+
+Start all the infras
+
+Setup the environment 
+
+Access the Services:
+
+Postgres is accessible on the default port 5432.
+Kafka Control Center is accessible at http://localhost:9021.
+Debezium is accessible at http://localhost:8085.
+MinIO is accessible at http://localhost:9001.
+Airflow is accessible at http://localhost:8080.
+
+## How To Guide 
+
+Guide 
+-> step 
+
+-> photo to see the results 
+
+
+
+
+

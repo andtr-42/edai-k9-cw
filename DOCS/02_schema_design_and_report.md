@@ -80,7 +80,8 @@ Each feature row should include `event_timestamp` for point-in-time joins and `c
    - f_user_total_playbacks_90d, f_user_avg_duration_watched_seconds_90d, f_user_distinct_genre_90d
    - f_user_payment_fail_rate_90d, f_user_avg_completion_rate_90d
 2. `feat_stream_30m` (grain: user_id, event_timestamp)
-   - f_stream_views_30m, f_stream_clicks_30m, f_stream_views_to_clicks_conversion_rate_30m
+   - f_stream_views_30m, f_stream_clicks_30m
+   - f_stream_views_to_clicks_conversion_rate_30m
    - f_stream_distinct_movie_starts_30m, f_stream_burst_activity_flag
 3. `feat_user_unified` (grain: user_id, event_timestamp)
    - Join offline + streaming for training/scoring
