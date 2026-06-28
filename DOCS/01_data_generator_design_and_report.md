@@ -17,11 +17,11 @@ The goal is to support downstream ingestion, transformation, and feature enginee
 
 | Table | Grain | Key Columns |
 |-------|-------|------------|
-| users | one per user | user_id, gender, age, subscription_type, signup_ts | 
-| movies | one per movie | movie_id, genre, country, runtime, language, release_year, created_ts |
-| playbacks | one per movie | playback_id, user_id, movie_id, click_ts, start_ts, stop_ts, duration_watched_seconds, completion_rate |
-| ratings | one per rating | rating_id, user_id, movie_id, rating, rating_ts | 
-| payment_attempts | one per month per user| payment_id, user_id, payment_ts, payment_method, amount, payment_status |
+| users | one per user | user_id (PK), gender, age, subscription_type, signup_ts | 
+| movies | one per movie | movie_id (PK), genre, country, runtime_seconds, language, release_year, created_ts |
+| playbacks | one per movie | playback_id (PK), user_id (FK), movie_id (FK), click_ts, start_ts, stop_ts, duration_watched_seconds, completion_rate |
+| ratings | one per rating | rating_id (PK), user_id (FK), movie_id (FK), rating, rating_ts | 
+| payment_attempts | one per month per user| payment_id (PK), user_id (FK), payment_ts, payment_method, amount, payment_status |
 
 ### 2.2 Offline Data Problems
 

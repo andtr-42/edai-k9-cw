@@ -34,6 +34,21 @@ Airflow is accessible at http://localhost:8080.
 Guide 
 -> step 
 
+data generate 
+
+`python3 -m src.data_gen.data_gen`
+
+data validation
+
+`python3 -m src.data_gen.validate_data_gen`
+
+`python3 -m scripts.setup_data_source_storage`
+
+`python3 -m scripts.store_data_source_data`
+
+
+
+
 -> photo to see the results 
 
 

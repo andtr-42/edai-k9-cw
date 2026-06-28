@@ -18,10 +18,12 @@ dependencies = [
     "numpy>=2.4.6",
     "pandas>=2.2.0,<2.3",
     "pemja==0.5.5",
+    "psycopg[binary]>=3.3.4",
     "py4j==0.10.9.7",
     "pyarrow==20.0.0",
     "pyspark==3.5.0",
     "ruamel-yaml==0.19.1",
+    "sqlalchemy>=2.0.51",
 ]
 
 [tool.ruff]
