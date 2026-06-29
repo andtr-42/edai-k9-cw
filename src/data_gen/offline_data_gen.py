@@ -243,51 +243,47 @@ def generate_movies(
     all_months_dfs = []
     current_id_start = 1  # Track IDs sequentially to avoid math errors
 
-    
+    for i, month in enumerate(months):
+        month_metadata = month.strftime("%Y-%m")
+        # Determine exact row count for this specific iteration
+        current_month_rows = base_rows_per_month
+        if i == len(months) - 1:
+            current_month_rows += remaining_rows
 
-    # for i, month in enumerate(months):
-    #     month_metadata = month.strftime("%Y-%m")
-    #     # Determine exact row count for this specific iteration
-    #     current_month_rows = base_rows_per_month
-    #     if i == len(months) - 1:
-    #         current_month_rows += remaining_rows
+        # Generate the random number of current_month_rows seconds to create the created_ts
+        days_in_current_month = month.days_in_month
+        max_seconds = days_in_current_month * 24 * 60 * 60
+        random_offsets = np.random.randint(0, max_seconds, current_month_rows)
+        created_at_timestamps = month + pd.to_timedelta(random_offsets, unit="s")
 
-    #     # Generate the random number of current_month_rows seconds to create the created_ts
-    #     days_in_current_month = month.days_in_month
-    #     max_seconds = days_in_current_month * 24 * 60 * 60
-    #     random_offsets = np.random.randint(0, max_seconds, current_month_rows)
-    #     created_at_timestamps = month + pd.to_timedelta(random_offsets, unit="s")
+        # Base data dictionary
+        data = {
+            "movie_id": np.arange(current_id_start, current_id_start + current_month_rows),
+            "genre": np.random.choice(genres, current_month_rows, p=genre_probs),
+            "runtime_seconds": np.random.randint(
+                movie_config["min_runtime_seconds"], movie_config["max_runtime_seconds"] + 1, current_month_rows
+            ),
+            "language": np.random.choice(movie_config["languages"], current_month_rows),
+            "release_year": np.random.randint(
+                movie_config["start_release_year"], movie_config["end_release_year"] + 1, current_month_rows
+            ),
+            "created_at": created_at_timestamps
+        }
+        if month >= schema_change_date:
+            chosen_countries = np.random.choice(movie_config["countries"], current_month_rows)
+            # FIX: Use the explicit country-to-language mapping dictionary
+            chosen_languages = [
+                movie_config["language_by_country"][country] for country in chosen_countries
+            ]
+            data["country"] = chosen_countries
+            data["language"] = chosen_languages
 
-    #     # Base data dictionary
-    #     data = {
-    #         "movie_id": np.arange(current_id_start, current_id_start + current_month_rows),
-    #         "genre": np.random.choice(genres, current_month_rows, p=genre_probs),
-    #         "runtime_seconds": np.random.randint(
-    #             movie_config["min_runtime_seconds"], movie_config["max_runtime_seconds"] + 1, current_month_rows
-    #         ),
-    #         "language": np.random.choice(movie_config["languages"], current_month_rows),
-    #         "release_year": np.random.randint(
-    #             movie_config["start_release_year"], movie_config["end_release_year"] + 1, current_month_rows
-    #         ),
-    #         "created_at": created_at_timestamps
-    #     }
-    #     if month >= schema_change_date:
-    #         chosen_countries = np.random.choice(movie_config["countries"], current_month_rows)
-    #         # FIX: Use the explicit country-to-language mapping dictionary
-    #         chosen_languages = [
-    #             movie_config["language_by_country"][country] for country in chosen_countries
-    #         ]
-    #         data["country"] = chosen_countries
-    #         data["language"] = chosen_languages
+        current_id_start += current_month_rows
 
-    #     current_id_start += current_month_rows
-
-    #     # Convert the current dictionary into a temporary DataFrame
-    #     df_month = pd.DataFrame(data)
-    #     df_month.attrs["month_metadata"] = month_metadata
-    #     all_months_dfs.append(df_month)
-
-
+        # Convert the current dictionary into a temporary DataFrame
+        df_month = pd.DataFrame(data)
+        df_month.attrs["month_metadata"] = month_metadata
+        all_months_dfs.append(df_month)
 
     print("2. Movie data: ")
     print("Before schema evolution: ")

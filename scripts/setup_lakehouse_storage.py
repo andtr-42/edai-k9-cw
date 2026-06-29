@@ -1,11 +1,10 @@
 from minio import Minio
 from src.config import (
-    MINIO_ENDPOINT,
-    MINIO_ACCESS_KEY,
-    MINIO_SECRET_KEY,
+    LAKEHOUSE_ENDPOINT,
+    LAKEHOUSE_ACCESS_KEY,
+    LAKEHOUSE_SECRET_KEY,
     BRONZE_BUCKET,
     SILVER_BUCKET,
-    GOLD_BUCKET,
 )
 
 def create_bucket(client: Minio, bucket_name: str) -> None:
@@ -18,15 +17,14 @@ def create_bucket(client: Minio, bucket_name: str) -> None:
 def main():
 
     client = Minio(
-        MINIO_ENDPOINT,
-        access_key=MINIO_ACCESS_KEY,
-        secret_key=MINIO_SECRET_KEY,
+        LAKEHOUSE_ENDPOINT,
+        access_key=LAKEHOUSE_ACCESS_KEY,
+        secret_key=LAKEHOUSE_SECRET_KEY,
         secure=False,
     )
     
     create_bucket(client, BRONZE_BUCKET)
     create_bucket(client, SILVER_BUCKET)
-    create_bucket(client, GOLD_BUCKET)
 
 if __name__ == "__main__":
     main()

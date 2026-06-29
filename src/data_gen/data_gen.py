@@ -9,7 +9,7 @@ Description:
     events based on that foundation.
 
 Execution:
-    python -m src.generation.main_data_gen
+    python3 -m src.data_gen.data_gen
 """
 
 import numpy as np
@@ -132,7 +132,7 @@ if __name__ == "__main__":
         "days_history": 180,
         "schema_change_date": pd.Timestamp("2026-04-07"),
         "skew_genre": "Drama",
-        "skew_ratio_genre": 0.6,
+        "skew_ratio_genre": 0.9,
         "offline_duplicate_rate": 0.05,
         
         # Streaming Configuration

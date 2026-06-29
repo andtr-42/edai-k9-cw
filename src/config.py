@@ -28,4 +28,3 @@ LAKEHOUSE_SECRET_KEY = os.getenv("LAKEHOUSE_SECRET_KEY", "lhadmin123")
 
 BRONZE_BUCKET = os.getenv("BRONZE_BUCKET", "bronze-bucket")
 SILVER_BUCKET = os.getenv("SILVER_BUCKET", "silver-bucket")
-GOLD_BUCKET = os.getenv("GOLD_BUCKET", "gold-bucket")
