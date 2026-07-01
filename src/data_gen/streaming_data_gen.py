@@ -87,11 +87,11 @@ def streaming_data_generator(
     print("Starting to generate streaming events using unified loop...")
 
     # Read df_users and df_movies
-    df_users = pd.read_parquet(offline_data_path / "users.parquet")
-    df_movies = pd.read_parquet(offline_data_path / "movies")
+    df_users = pd.read_parquet(offline_data_path / "users")
+    df_movies = pd.read_parquet(offline_data_path / "movies.parquet")
 
     # Extract clean lists and dicts from DataFrames for fast random sampling
-    user_ids = df_users["user_id"].tolist() if "user_id" in df_users.columns else list(range(1, len(df_users) + 1))
+    user_ids = df_users["user_id"].tolist()
     movie_runtimes = df_movies.set_index("movie_id")["runtime_seconds"].to_dict()
     movie_ids = list(movie_runtimes.keys())
 
@@ -138,8 +138,14 @@ def streaming_data_generator(
                 created_ts = exact_event_ts
 
             # Implement current_playback_offset_seconds logic
-            if event_type in ["impress", "view"]:
+            if event_type in ["impress"]:
                 movie_id = None
+                playback_id = None
+                playback_start_ts = None
+                current_playback_offset_seconds = None
+
+            elif event_type in ["view"]:
+                movie_id = random.choice(movie_ids)
                 playback_id = None
                 playback_start_ts = None
                 current_playback_offset_seconds = None

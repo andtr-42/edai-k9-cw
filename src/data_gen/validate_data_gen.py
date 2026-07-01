@@ -22,82 +22,108 @@ from pathlib import Path
 from src.config import OFFLINE_DATA_PATH, STREAMING_DATA_PATH
 
 
-def validate_movies_data(offline_path: Path, schema_change_date: pd.Timestamp) -> None:
-    """
-    Validates the 'movies' dataset for genre skew and schema evolution tracking.
-    """
-    print("\n" + "="*70)
-    print(" 🎬 OFFLINE VALIDATION: MOVIES METADATA")
-    print("="*70)
+from pathlib import Path
+import pandas as pd
 
-    # 1. Read Data (Handling Schema Drift)
-    movies_path = offline_path / "movies"
+
+def validate_users_data(offline_path: Path, historical_pool_schema_change_date: pd.Timestamp) -> None:
+    """Validates the 'users' dataset for schema evolution tracking (handling the
+
+    'gender' column drift across monthly parquets).
+    """
+    print("\n" + "=" * 70)
+    print(" 👤 OFFLINE VALIDATION: USERS METADATA")
+    print("=" * 70)
+
+    # 1. Read Data (Handling Schema Drift across monthly partition directories)
+    users_path = offline_path / "users"
     try:
-        # Read files individually and concatenate to preserve evolving schemas
-        parquet_files = list(movies_path.glob("*.parquet"))
+        # Recursively find all parquet files within the users directory
+        parquet_files = list(users_path.glob("**/*.parquet"))
         if not parquet_files:
-            print(f"[ERROR] No parquet files found in {movies_path}")
+            print(f"[ERROR] No parquet files found in {users_path}")
             return
-            
+
         dfs = [pd.read_parquet(file) for file in parquet_files]
-        df_movies = pd.concat(dfs, ignore_index=True)
-        
+        df_users = pd.concat(dfs, ignore_index=True)
+
         # Format and explicitly sort the data chronologically
-        df_movies['created_at'] = pd.to_datetime(df_movies['created_at'])
-        df_movies = df_movies.sort_values(by='created_at').reset_index(drop=True)
-        
+        df_users["signup_ts"] = pd.to_datetime(df_users["signup_ts"])
+        df_users = df_users.sort_values(by="signup_ts").reset_index(drop=True)
+
     except Exception as e:
-        print(f"[ERROR] Could not read movies data: {e}")
+        print(f"[ERROR] Could not read users data: {e}")
         return
 
-    total_movies = len(df_movies)
-    
-    # 2. Skew Validation (Genre)
-    print("\n--- 📊 GENRE DISTRIBUTION SKEW ---")
-    genre_counts = df_movies['genre'].value_counts()
-    print(genre_counts.to_string())
-    
-    drama_count = genre_counts.get("Drama", 0)
-    drama_pct = (drama_count / total_movies) * 100
-    print(f"\n[TARGET] 60.0% Drama")
-    print(f"[RESULT] {drama_pct:.2f}% Drama ({drama_count}/{total_movies} rows)\n")
+    # 2. Schema Evolution Validation
+    print("--- 🧬 SCHEMA EVOLUTION (Missing 'gender' column before target date) ---")
 
-    # 3. Schema Evolution Validation
-    print("--- 🧬 SCHEMA EVOLUTION (Missing 'country' column before target date) ---")
-    
-    # Split the dataset
-    df_old = df_movies[df_movies['created_at'] < schema_change_date].copy()
-    df_new = df_movies[df_movies['created_at'] >= schema_change_date].copy()
+    # Split the dataset based on the target schema change date
+    df_old = df_users[df_users["signup_ts"] < historical_pool_schema_change_date].copy()
+    df_new = df_users[df_users["signup_ts"] >= historical_pool_schema_change_date].copy()
 
-    print(f"Schema Change Date Target: {schema_change_date.strftime('%Y-%m-%d')}")
-    
+    print(f"Schema Change Date Target: {historical_pool_schema_change_date.strftime('%Y-%m-%d')}")
+
     # --- Safe Validation for PRE-SCHEMA Data ---
-    print("\n[PRE-SCHEMA CHANGE] (Expect 100% Nulls in 'country')")
+    print("\n[PRE-SCHEMA CHANGE] (Expect 100% Nulls or Completely Missing 'gender')")
     print(f"Total Rows: {len(df_old)}")
-    
-    if 'country' in df_old.columns:
-        null_count_old = df_old['country'].isna().sum()
+
+    if "gender" in df_old.columns:
+        null_count_old = df_old["gender"].isna().sum()
     else:
         null_count_old = len(df_old)
-        df_old['country'] = None 
-        
-    print(f"Null Count in 'country': {null_count_old}")
+        df_old["gender"] = None
+
+    print(f"Null Count in 'gender': {null_count_old}")
     print("Sample (Top 5 rows):")
-    print(df_old[['movie_id', 'created_at', 'genre', 'country']].head(5).to_string(index=False))
+    print(
+        df_old[["user_id", "signup_ts", "subscription_type", "gender"]]
+        .head(5)
+        .to_string(index=False)
+    )
 
     # --- Safe Validation for POST-SCHEMA Data ---
-    print("\n[POST-SCHEMA CHANGE] (Expect 0% Nulls in 'country')")
+    print("\n[POST-SCHEMA CHANGE] (Expect 0% Nulls in 'gender')")
     print(f"Total Rows: {len(df_new)}")
-    
-    if 'country' in df_new.columns:
-        null_count_new = df_new['country'].isna().sum()
+
+    if "gender" in df_new.columns:
+        null_count_new = df_new["gender"].isna().sum()
     else:
         null_count_new = len(df_new)
-        df_new['country'] = "COLUMN COMPLETELY MISSING"
-        
-    print(f"Null Count in 'country': {null_count_new}")
+        df_new["gender"] = "COLUMN COMPLETELY MISSING"
+
+    print(f"Null Count in 'gender': {null_count_new}")
     print("Sample (Top 5 rows):")
-    print(df_new[['movie_id', 'created_at', 'genre', 'country']].head(5).to_string(index=False))
+    print(
+        df_new[["user_id", "signup_ts", "subscription_type", "gender"]]
+        .head(5)
+        .to_string(index=False)
+    )
+
+
+def validate_movies_data(offline_path: Path) -> None:
+    """Validates the 'movies' dataset for genre skew and schema evolution tracking
+
+    (handling the 'country' column drift).
+    """
+    print("\n" + "=" * 70)
+    print(" 🎬 OFFLINE VALIDATION: MOVIES METADATA")
+    print("=" * 70)
+
+    # 1. Read Data (Handling Schema Drift)
+    movies_path = offline_path / "movies.parquet"
+    df_movies = pd.read_parquet(movies_path)
+
+    # 2. Skew Validation (Genre)
+    print("\n--- 📊 GENRE DISTRIBUTION SKEW ---")
+    genre_counts = df_movies["genre"].value_counts()
+    print(genre_counts.to_string())
+
+    drama_count = genre_counts.get("Drama", 0)
+    drama_pct = (drama_count / len(df_movies)) * 100
+    print(f"\n[TARGET] 90.0% Drama")
+    print(f"[RESULT] {drama_pct:.2f}% Drama ({drama_count}/{len(df_movies)} rows)\n")
+
 
 def validate_playbacks_data(offline_path: Path) -> None:
     """
@@ -113,7 +139,7 @@ def validate_playbacks_data(offline_path: Path) -> None:
     print(" 📺 OFFLINE VALIDATION: PLAYBACKS LOGS")
     print("="*70)
 
-    playbacks_path = offline_path / "playbacks"
+    playbacks_path = offline_path / "playbacks.parquet"
     try:
         df_playbacks = pd.read_parquet(playbacks_path)
     except Exception as e:
@@ -261,7 +287,8 @@ def validate_data_gen(
     print("             DATA GENERATION QUALITY REPORT CARD")
     print("#"*70)
 
-    validate_movies_data(offline_path=offline_data_path, schema_change_date=schema_change_date)
+    validate_users_data(offline_path=offline_data_path, historical_pool_schema_change_date=schema_change_date - pd.Timedelta(days=180) )
+    validate_movies_data(offline_path=offline_data_path)
     validate_playbacks_data(offline_path=offline_data_path)
     validate_streaming_events(streaming_path=streaming_data_path)
 

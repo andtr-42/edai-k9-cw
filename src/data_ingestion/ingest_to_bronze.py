@@ -5,11 +5,14 @@ This script extracts raw data from a MinIO source bucket (DATA_SOURCE_BUCKET)
 using source-specific credentials, appends structural metadata, 
 and writes the enriched datasets into a target bronze bucket (BRONZE_BUCKET)
 on a separate lakehouse cluster using target-specific credentials in Delta format.
+
+python3 -m src.data_ingestion.ingest_to_bronze_baseline
 """
 
 import time
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
+from pyspark.sql.types import StructType, StructField, LongType, StringType, TimestampType
 from src.config import (
     DELTA_VERSION,
     HADOOP_VERSION,
@@ -23,13 +26,44 @@ from src.config import (
     BRONZE_BUCKET,
 )
 
+USER_SCHEMA = StructType([
+    StructField("user_id",           LongType(),      nullable=False),
+    StructField("gender",            StringType(),    nullable=True),  # Must be nullable to apply fillna
+    StructField("age",               LongType(),      nullable=True),
+    StructField("subscription_type", StringType(),    nullable=True),
+    StructField("signup_ts",         TimestampType(), nullable=True),
+])
+
 def add_metadata_columns(df: DataFrame) -> DataFrame:
     """Appends audit and data lineage metadata columns to the DataFrame."""
     return df.withColumn("raw_id", F.monotonically_increasing_id()) \
              .withColumn("_ingested_at", F.current_timestamp()) \
              .select("raw_id", *df.columns, "_ingested_at")
 
-def extract_data(spark: SparkSession, bucket_name: str, data_path: str) -> DataFrame:
+def extract_data(
+    spark: SparkSession, 
+    bucket_name: str, 
+    data_path: str, 
+    explicit_schema: StructType | None = None,
+    fill_na_dict: dict | None = None
+) -> DataFrame:
+    """Reads Parquet data using explicit schema and applies fillna handling if provided."""
+    full_path = f"s3a://{bucket_name}/{data_path}"
+    
+    reader = spark.read
+    if explicit_schema:
+        # Enforcing schema directly eliminates the costly mergeSchema job overhead
+        # reader = reader.option("mergeSchema", "True")  # Allow schema merging if needed
+        reader = reader.schema(explicit_schema)
+        
+    df = reader.parquet(full_path)
+    
+    if fill_na_dict:
+        df = df.fillna(fill_na_dict)
+        
+    return add_metadata_columns(df)
+
+def extract_data_with_schema_merging(spark: SparkSession, bucket_name: str, data_path: str) -> DataFrame:
     """Reads Parquet data directly from the S3/MinIO source bucket with schema merging."""
     full_path = f"s3a://{bucket_name}/{data_path}"
     
@@ -53,7 +87,6 @@ def upload_delta(
         df.write
         .format("delta")
         .mode("overwrite")
-        .option("mergeSchema", "true")
         .option("overwriteSchema", "true")
     )
     
@@ -100,28 +133,41 @@ if __name__ == "__main__":
 
     # Ingestion Manifest
     datasets = {
-        "raw_users": {"path": "users.parquet", "partition_cols": None},
-        "raw_movies": {"path": "movies", "partition_cols": None},
-        "raw_playbacks": {"path": "playbacks", "partition_cols": None}, 
-        "raw_ratings": {"path": "ratings", "partition_cols": None}, 
-        "raw_payment_attempts": {"path": "payments", "partition_cols": None} 
+        "raw_users": {"path": "users", "partition_cols": None},
+        "raw_movies": {"path": "movies.parquet", "partition_cols": None},
+        "raw_playbacks": {"path": "playbacks.parquet", "partition_cols": None}, 
+        "raw_ratings": {"path": "ratings.parquet", "partition_cols": None}, 
+        "raw_payment_attempts": {"path": "payments.parquet", "partition_cols": None} 
     }
 
     # Execute batch processing across the manifest sequentially
+    datasets = {
+        "raw_users": {
+            "path": "users", 
+            "partition_cols": None, 
+            "schema": USER_SCHEMA, 
+            "fillna": {"gender": "UNKNOWN"} # Fills missing gender values smoothly
+        },
+        "raw_movies": {"path": "movies.parquet", "partition_cols": None, "schema": None, "fillna": None},
+        "raw_playbacks": {"path": "playbacks.parquet", "partition_cols": None, "schema": None, "fillna": None}, 
+        "raw_ratings": {"path": "ratings.parquet", "partition_cols": None, "schema": None, "fillna": None}, 
+        "raw_payment_attempts": {"path": "payments.parquet", "partition_cols": None, "schema": None, "fillna": None} 
+    }
+
+    # Sequence execution loop
     for topic, config in datasets.items():
         print(f"\n==================== Processing Topic: {topic} ====================")
         spark.sparkContext.setJobGroup(groupId=topic, description=f"Ingesting {topic}", interruptOnCancel=True)
         
-        # Read using Data Source Bucket configurations
-        df = extract_data(spark, bucket_name=DATA_SOURCE_BUCKET, data_path=config["path"])
-        
-        # Write using Bronze Bucket configurations
-        upload_delta(
-            df=df, 
-            bucket_name=BRONZE_BUCKET, 
-            topic=topic, 
-            partition_cols=config["partition_cols"]
+        df = extract_data(
+            spark, 
+            bucket_name=DATA_SOURCE_BUCKET, 
+            data_path=config["path"], 
+            explicit_schema=config["schema"],
+            fill_na_dict=config["fillna"]
         )
+        
+        upload_delta(df=df, bucket_name=BRONZE_BUCKET, topic=topic, partition_cols=config["partition_cols"])
         spark.sparkContext.setJobGroup(None, None)
 
     # ---- KEEP-ALIVE BLOCK (Moved out of loop to run at the very end) ----

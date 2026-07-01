@@ -74,8 +74,9 @@ def data_generator(
         n_ratings=n_ratings,
         n_payment_attempts=n_payment_attempts,
         base_date=offline_base_date,
+        historical_pool_base_date=offline_base_date - pd.Timedelta(days=180), # create users and movies data 180 pre playback data
         days_history=days_history,
-        schema_change_date=schema_change_date,
+        historical_pool_schema_change_date=schema_change_date - pd.Timedelta(days=180), # schema change data for users and movies
         skew_genre=skew_genre,
         skew_ratio_genre=skew_ratio_genre,
         duplicate_rate=offline_duplicate_rate,
@@ -130,7 +131,7 @@ if __name__ == "__main__":
         "n_payment_attempts": 50_000,
         "offline_base_date": pd.Timestamp("2026-06-07"), # static date for reproducible
         "days_history": 180,
-        "schema_change_date": pd.Timestamp("2026-04-07"),
+        "schema_change_date": pd.Timestamp("2026-04-07"), 
         "skew_genre": "Drama",
         "skew_ratio_genre": 0.9,
         "offline_duplicate_rate": 0.05,

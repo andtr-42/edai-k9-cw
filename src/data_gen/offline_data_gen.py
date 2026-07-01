@@ -167,62 +167,107 @@ def write_parquet(
 
 
 def generate_users(
-    n_users: int, user_config: dict, base_date: pd.Timestamp, days_history: int
-) -> pd.DataFrame:
-    """Generate users data with specified configuration and historical distribution."""
+    n_users: int,
+    user_config: dict,
+    user_base_date: pd.Timestamp,
+    days_history: int,
+    schema_change_date: pd.Timestamp,
+) -> list[pd.DataFrame]:
+    """Generate an 'Old Pool' of users data with a monthly distribution where
 
-    # 1. Calculate the total history window in seconds
-    # 24 hours * 60 minutes * 60 seconds = 86,400 seconds per day
-    total_seconds_history = (days_history + 1) * 24 * 60 * 60
+    all timestamps are shifted into the deep past (strictly older than
+    days_history).
 
-    # 2. Generate a random number of seconds to subtract for each user
-    random_seconds = np.random.randint(0, total_seconds_history, n_users)
+    This ensures users exist before any transaction data (like playbacks) is
+    generated.
+    """
+    # APPROACH UPDATE: Shift the generation window backwards by an extra 'days_history'
+    # This places the pool between (base_date - 2*days_history) and (base_date - days_history)
+    start_date_pool = user_base_date - pd.to_timedelta(days_history, unit="D")
 
-    # 3. Subtract the random seconds from the base_date
-    signup_ts = base_date - pd.to_timedelta(random_seconds, unit="s")
+    # Generate months specifically for this older historical pool window
+    months = pd.date_range(
+        start=start_date_pool, periods=days_history // 30, freq="MS"
+    )
+    base_rows_per_month = n_users // len(months)
+    remaining_rows = n_users - (base_rows_per_month * len(months))
 
-    df_users = pd.DataFrame(
-        {
-            "user_id": np.arange(1, n_users + 1),
-            "gender": np.random.choice(
-                user_config["genders"], n_users
-            ),  # uniform distribution
+    all_months_dfs = []
+    current_id_start = 1
+
+    for i, month in enumerate(months):
+        month_metadata = month.strftime("%Y-%m")
+        current_month_rows = base_rows_per_month
+        if i == len(months) - 1:
+            current_month_rows += remaining_rows
+
+        # Generate registration timestamps within the current old month block
+        days_in_current_month = month.days_in_month
+        max_seconds = days_in_current_month * 24 * 60 * 60
+        random_offsets = np.random.randint(0, max_seconds, current_month_rows)
+        signup_timestamps = month + pd.to_timedelta(random_offsets, unit="s")
+
+        # Base data dictionary (Missing the 'gender' column completely)
+        data = {
+            "user_id": np.arange(
+                current_id_start, current_id_start + current_month_rows
+            ),
             "age": np.random.randint(
-                user_config["min_age"], user_config["max_age"] + 1, n_users
+                user_config["min_age"],
+                user_config["max_age"] + 1,
+                current_month_rows,
             ),
             "subscription_type": np.random.choice(
-                user_config["subscription_types"], n_users
+                user_config["subscription_types"], current_month_rows
             ),
-            "signup_ts": signup_ts,
+            "signup_ts": signup_timestamps,
         }
-    )
 
-    print("1. User data:")
-    print(df_users.head(5), "\n")
-    print("Total numbers of users generated: ", len(df_users), "\n")
+        # SCHEMA EVOLUTION: Evaluated against the old historical months
+        if signup_timestamps[0] >= schema_change_date:
+            data["gender"] = np.random.choice(
+                user_config["genders"], current_month_rows
+            )
 
-    return df_users
+        current_id_start += current_month_rows
 
+        # Convert to DataFrame and preserve monthly metadata
+        df_month = pd.DataFrame(data)
+        df_month.attrs["month_metadata"] = month_metadata
+        all_months_dfs.append(df_month)
+
+    print("1. Old Pool User data (Guaranteed older than active tracking window):")
+    print("Before schema evolution (No gender column):")
+    print(all_months_dfs[0].head(5), "\n")
+    print("After schema evolution (Includes gender column):")
+    print(all_months_dfs[-1].head(5), "\n")
+
+    total_rows = sum(len(df) for df in all_months_dfs)
+    print(f"Total number of old users pool generated: {total_rows} \n")
+    return all_months_dfs
 
 def generate_movies(
     n_movies: int,
     movie_config: dict,
-    base_date: pd.Timestamp,
+    movie_base_date: pd.Timestamp,
     days_history: int,
     skew_genre: str,
     skew_ratio_genre: float,
-    schema_change_date: pd.Timestamp,
-) -> list[pd.DataFrame]:
-    """Generate movies data with skew distribution for genres and a schema change after a certain date."""
+) -> pd.DataFrame:
+    """Generate an 'Old Pool' of movies data vectorially, where all creation
 
-    # 1 & 2. Calculate probabilities cleanly using NumPy
+    timestamps are strictly older than days_history.
+
+    This guarantees every movie exists prior to any transactional playback
+    events.
+    """
+    # 1. Calculate skewed probabilities cleanly using NumPy
     genres = movie_config["genres"]
     other_genres = [g for g in genres if g != skew_genre]
-    
+
     other_probs = np.random.random(len(other_genres))
     other_probs = (other_probs / other_probs.sum()) * (1 - skew_ratio_genre)
-    
-    # Reconstruct the full probability array matching the configuration order
+
     genre_probs = []
     other_idx = 0
     for g in genres:
@@ -232,75 +277,46 @@ def generate_movies(
             genre_probs.append(other_probs[other_idx])
             other_idx += 1
 
+    start_date_pool = movie_base_date - pd.to_timedelta(days_history, unit="D")
 
-    # 3. Handle tracking loop variables safely
-    start_date = base_date - pd.to_timedelta(days_history, unit="D")
-    months = pd.date_range(start=start_date, periods=days_history // 30, freq="MS")
-    base_rows_per_month = n_movies // len(months)
-    remaining_rows = n_movies - (base_rows_per_month * len(months))
+    total_seconds_history = days_history * 24 * 60 * 60
+    random_offsets = np.random.randint(0, total_seconds_history, n_movies)
+    created_at_timestamps = start_date_pool + pd.to_timedelta(
+        random_offsets, unit="s"
+    )
 
-    # 4. Generate the data per month
-    all_months_dfs = []
-    current_id_start = 1  # Track IDs sequentially to avoid math errors
+    # 3. Construct the entire DataFrame globally in one shot
+    data = {
+        "movie_id": np.arange(1, n_movies + 1),
+        "genre": np.random.choice(genres, n_movies, p=genre_probs),
+        "runtime_seconds": np.random.randint(
+            movie_config["min_runtime_seconds"],
+            movie_config["max_runtime_seconds"] + 1,
+            n_movies,
+        ),
+        "language": np.random.choice(movie_config["languages"], n_movies),
+        "release_year": np.random.randint(
+            movie_config["start_release_year"],
+            movie_config["end_release_year"] + 1,
+            n_movies,
+        ),
+        "created_at": created_at_timestamps,
+    }
 
-    for i, month in enumerate(months):
-        month_metadata = month.strftime("%Y-%m")
-        # Determine exact row count for this specific iteration
-        current_month_rows = base_rows_per_month
-        if i == len(months) - 1:
-            current_month_rows += remaining_rows
+    movies_df = pd.DataFrame(data)
 
-        # Generate the random number of current_month_rows seconds to create the created_ts
-        days_in_current_month = month.days_in_month
-        max_seconds = days_in_current_month * 24 * 60 * 60
-        random_offsets = np.random.randint(0, max_seconds, current_month_rows)
-        created_at_timestamps = month + pd.to_timedelta(random_offsets, unit="s")
+    print("2. Old Pool Movie data (Guaranteed older than active tracking window):")
+    print(movies_df.head(5), "\n")
+    print(f"Total number of old movies pool generated: {len(movies_df)} \n")
 
-        # Base data dictionary
-        data = {
-            "movie_id": np.arange(current_id_start, current_id_start + current_month_rows),
-            "genre": np.random.choice(genres, current_month_rows, p=genre_probs),
-            "runtime_seconds": np.random.randint(
-                movie_config["min_runtime_seconds"], movie_config["max_runtime_seconds"] + 1, current_month_rows
-            ),
-            "language": np.random.choice(movie_config["languages"], current_month_rows),
-            "release_year": np.random.randint(
-                movie_config["start_release_year"], movie_config["end_release_year"] + 1, current_month_rows
-            ),
-            "created_at": created_at_timestamps
-        }
-        if month >= schema_change_date:
-            chosen_countries = np.random.choice(movie_config["countries"], current_month_rows)
-            # FIX: Use the explicit country-to-language mapping dictionary
-            chosen_languages = [
-                movie_config["language_by_country"][country] for country in chosen_countries
-            ]
-            data["country"] = chosen_countries
-            data["language"] = chosen_languages
-
-        current_id_start += current_month_rows
-
-        # Convert the current dictionary into a temporary DataFrame
-        df_month = pd.DataFrame(data)
-        df_month.attrs["month_metadata"] = month_metadata
-        all_months_dfs.append(df_month)
-
-    print("2. Movie data: ")
-    print("Before schema evolution: ")
-    print(all_months_dfs[0].head(5), "\n")
-    print("After schema evolution: ")
-    print(all_months_dfs[-1].head(5), "\n")
-
-    total_rows = sum(len(df) for df in all_months_dfs)
-    print(f"Total number of movies generated: {total_rows} \n")
-    return all_months_dfs
+    return movies_df
 
 def generate_playbacks(
     n_playbacks: int,
     n_users: int,
-    movies_dfs: list[pd.DataFrame],
+    movies_df: pd.DataFrame,
     playback_config: dict,
-    base_date: pd.Timestamp,
+    playback_base_date: pd.Timestamp,
     days_history: int,
     duplicate_rate: float = 0.05,
 ) -> pd.DataFrame:
@@ -327,28 +343,25 @@ def generate_playbacks(
         ),
     )
 
-    # Combine generated monthly movie datasets to extract valid movie IDs and runtimes
-    df_movies_all = pd.concat(movies_dfs, ignore_index=True)
-
     # 2. Generate high cardinality playbacks using replace=True
     df_playbacks = pd.DataFrame(
         {
             "playback_id": np.arange(1, n_playbacks + 1),
             "user_id": np.random.choice(np.arange(1, n_users + 1), n_playbacks, replace=False),
-            "movie_id": np.random.choice(np.arange(1, len(df_movies_all) + 1), n_playbacks, replace=False),
+            "movie_id": np.random.choice(np.arange(1, len(movies_df) + 1), n_playbacks, replace=False),
         }
     )
 
     # Merge runtimes temporarily to accurately evaluate playback durations
     df_playbacks = df_playbacks.merge(
-        df_movies_all[["movie_id", "runtime_seconds"]], on="movie_id", how="left"
+        movies_df[["movie_id", "runtime_seconds"]], on="movie_id", how="left"
     )
 
     # 3. Generate random execution timestamps within the exact historical footprint
     total_seconds_history = days_history * 24 * 60 * 60
     random_seconds_offset = np.random.randint(0, total_seconds_history, n_playbacks)
     
-    df_playbacks["click_ts"] = base_date - pd.to_timedelta(random_seconds_offset, unit="s")
+    df_playbacks["click_ts"] = playback_base_date - pd.to_timedelta(random_seconds_offset, unit="s")
     df_playbacks["start_ts"] = df_playbacks["click_ts"] + pd.to_timedelta(
         np.random.randint(0, 15, n_playbacks), unit="s"
     )
@@ -383,9 +396,9 @@ def generate_playbacks(
 def generate_ratings(
     n_ratings: int,
     n_users: int,
-    movies_dfs: list[pd.DataFrame],
+    movies_df: pd.DataFrame,
     ratings_config: dict,
-    base_date: pd.Timestamp,
+    rating_base_date: pd.Timestamp,
     days_history: int,
 ) -> pd.DataFrame:
     """Generate ratings logs distributed uniformly across history with explicit timestamps and partitioned dates."""
@@ -395,10 +408,10 @@ def generate_ratings(
     random_seconds_offset = np.random.randint(0, total_seconds_history, n_ratings)
 
     # Generate transaction timestamps moving backward from base_date
-    rating_ts = base_date - pd.to_timedelta(random_seconds_offset, unit="s")
+    rating_ts = rating_base_date - pd.to_timedelta(random_seconds_offset, unit="s")
 
     # Combine generated monthly movie datasets to calculate the length
-    total_movies = sum(len(df) for df in movies_dfs)
+    total_movies = len(movies_df)
     
     # Extract config limits (+1 to max_rating for inclusion in np.random.randint)
     low_rate = ratings_config["min_rating"]
@@ -424,9 +437,9 @@ def generate_ratings(
 
 def generate_payments(
     n_payments: int,
-    df_users: pd.DataFrame,
+    users_dfs: list[pd.DataFrame],
     payment_config: dict,
-    base_date: pd.Timestamp,
+    payment_base_date: pd.Timestamp,
     days_history: int,
 ) -> pd.DataFrame:
     """Generate payment logs and map transaction amounts based on user subscription types."""
@@ -434,7 +447,10 @@ def generate_payments(
     # 1. Simplify timestamp generation using a clean microsecond/second offset
     total_seconds_history = days_history * 24 * 60 * 60
     random_seconds_offset = np.random.randint(0, total_seconds_history, n_payments)
-    payment_ts = base_date - pd.to_timedelta(random_seconds_offset, unit="s")
+    payment_ts = payment_base_date - pd.to_timedelta(random_seconds_offset, unit="s")
+    
+    # concatinate the list of users df into a users_df
+    df_users = pd.concat( users_dfs, axis=0, join='outer', ignore_index=True, sort=False)
 
     # 2. Construct the base payments DataFrame
     df_payments = pd.DataFrame(
@@ -472,37 +488,38 @@ def offline_data_generator(
     n_ratings: int,
     n_payment_attempts: int,
     base_date: pd.Timestamp,
+    historical_pool_base_date: pd.Timestamp,
     days_history: int,
-    schema_change_date: pd.Timestamp,
+    historical_pool_schema_change_date: pd.Timestamp,
     skew_genre: str,
     skew_ratio_genre: float,
     duplicate_rate: float,
-) -> tuple[pd.DataFrame, list[pd.DataFrame], pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[list[pd.DataFrame], pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Orchestrates the generation of all synthetic datasets."""
     
-    users_df = generate_users(
+    users_dfs = generate_users(
         n_users=n_users,
         user_config=USER_CONFIG,
-        base_date=base_date,
+        user_base_date=historical_pool_base_date,
         days_history=days_history,
+        schema_change_date=historical_pool_schema_change_date,
     )
 
-    movies_dfs = generate_movies(
+    movies_df = generate_movies(
         n_movies=n_movies,
         movie_config=MOVIE_CONFIG,
-        base_date=base_date,
+        movie_base_date=historical_pool_base_date,
         days_history=days_history,
         skew_genre=skew_genre,
         skew_ratio_genre=skew_ratio_genre,
-        schema_change_date=schema_change_date,
     )
 
     playbacks_df = generate_playbacks(
         n_playbacks=n_playbacks,
         n_users=n_users,
-        movies_dfs=movies_dfs,
+        movies_df=movies_df,
         playback_config=PLAYBACK_CONFIG,
-        base_date=base_date,
+        playback_base_date=base_date,
         days_history=days_history,
         duplicate_rate=duplicate_rate,
     )
@@ -510,26 +527,26 @@ def offline_data_generator(
     ratings_df = generate_ratings(
         n_ratings=n_ratings,
         n_users=n_users,
-        movies_dfs=movies_dfs,
+        movies_df=movies_df,
         ratings_config=RATINGS_CONFIG,
-        base_date=base_date,
+        rating_base_date=base_date,
         days_history=days_history,
     )
 
     payments_df = generate_payments(
         n_payments=n_payment_attempts,
-        df_users=users_df,
+        users_dfs=users_dfs,
         payment_config=PAYMENT_CONFIG,
-        base_date=base_date,
+        payment_base_date=base_date,
         days_history=days_history,
     )
 
-    return users_df, movies_dfs, playbacks_df, ratings_df, payments_df
+    return users_dfs, movies_df, playbacks_df, ratings_df, payments_df
 
 
 def write_offline_data(
-    users_df: pd.DataFrame,
-    movies_dfs: list[pd.DataFrame],
+    users_dfs: list[pd.DataFrame],
+    movies_df: pd.DataFrame,
     playbacks_df: pd.DataFrame,
     ratings_df: pd.DataFrame,
     payments_df: pd.DataFrame,
@@ -544,52 +561,47 @@ def write_offline_data(
     base_output_path.mkdir(parents=True, exist_ok=True)
 
     # Set up and create output directories safely using pathlib
-    output_users_path = base_output_path / "users.parquet"
-    movies_output_dir = base_output_path / "movies"
-    playbacks_output_dir = base_output_path / "playbacks"
-    ratings_output_dir = base_output_path / "ratings"
-    payments_output_dir = base_output_path / "payments"
+    users_output_dir = base_output_path / "users"
+    movies_output_path = base_output_path / "movies.parquet"
+    playbacks_output_path = base_output_path / "playbacks.parquet"
+    ratings_output_path = base_output_path / "ratings.parquet"
+    payments_output_path = base_output_path / "payments.parquet"
 
-    movies_output_dir.mkdir(exist_ok=True)
-    playbacks_output_dir.mkdir(exist_ok=True)
-    ratings_output_dir.mkdir(exist_ok=True)
-    payments_output_dir.mkdir(exist_ok=True)
+    # check if the users_output_dir exist
+    users_output_dir.mkdir(exist_ok=True)
     
-    # Write user data
-    write_parquet(users_df, str(output_users_path))
-    print(f"Successfully generated and saved users data to {output_users_path}")
-
-    # Write movie data
-    for df_month in movies_dfs:
+    # Write users data
+    for df_month in users_dfs:
         month_str = df_month.attrs["month_metadata"]
         file_name = f"movies_{month_str}.parquet"
-        output_file_path = movies_output_dir / file_name
+        output_file_path = users_output_dir / file_name
         
         write_parquet(df_month, str(output_file_path))
 
-    print(f"Successfully generated and saved monthly movie files to {movies_output_dir}")
+    print(f"Successfully generated and saved users data to {users_output_dir}")
+
+    write_parquet(movies_df, str(movies_output_path))
+    print(f"Successfully generated and saved monthly movie files to {movies_output_path}")
 
     # Write Hive-partitioned DataFrames
     write_parquet(
         df=playbacks_df, 
-        output_path=str(playbacks_output_dir), 
-        partition_cols=["playback_date"]
+        output_path=str(playbacks_output_path), 
     )
-    print(f"Successfully saved playbacks data to {playbacks_output_dir}")
+    print(f"Successfully saved playbacks data to {playbacks_output_path}")
 
     write_parquet(
         df=ratings_df, 
-        output_path=str(ratings_output_dir), 
-        partition_cols=["rating_date"]
+        output_path=str(ratings_output_path), 
     )
-    print(f"Successfully saved ratings data to {ratings_output_dir}")
+    print(f"Successfully saved ratings data to {ratings_output_path}")
 
     write_parquet(
         df=payments_df, 
-        output_path=str(payments_output_dir), 
-        partition_cols=["payment_date"]
+        output_path=str(payments_output_path), 
+        # partition_cols=["payment_date"]
     )
-    print(f"Successfully saved payments data to {payments_output_dir}")
+    print(f"Successfully saved payments data to {payments_output_path}")
 
 
 # if __name__ == "__main__":
