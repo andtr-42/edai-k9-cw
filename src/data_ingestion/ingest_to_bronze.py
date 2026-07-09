@@ -6,7 +6,7 @@ using source-specific credentials, appends structural metadata,
 and writes the enriched datasets into a target bronze bucket (BRONZE_BUCKET)
 on a separate lakehouse cluster using target-specific credentials in Delta format.
 
-python3 -m src.data_ingestion.ingest_to_bronze_baseline
+python3 -m src.data_ingestion.ingest_to_bronze
 """
 
 import time

@@ -125,6 +125,7 @@ PAYMENT_CONFIG = {
         "Standard": 19.99,
         "Premium": 26.99,
     },
+    "currency": ["USD", "EUR", "GBP"]
 }
 
 # ==========================================
@@ -289,6 +290,7 @@ def generate_movies(
     data = {
         "movie_id": np.arange(1, n_movies + 1),
         "genre": np.random.choice(genres, n_movies, p=genre_probs),
+        "country": np.random.choice(movie_config["countries"], n_movies),
         "runtime_seconds": np.random.randint(
             movie_config["min_runtime_seconds"],
             movie_config["max_runtime_seconds"] + 1,
@@ -458,6 +460,7 @@ def generate_payments(
             "payment_id": np.arange(1, n_payments + 1),
             "user_id": np.random.choice(np.arange(1, len(df_users) + 1), n_payments, replace=True),
             "payment_method": np.random.choice(payment_config["payment_methods"], n_payments),
+            "currency": np.random.choice(payment_config["currency"], n_payments),
             "payment_status": np.random.choice(payment_config["payment_statuses"], n_payments),
             "payment_ts": payment_ts,
         }
@@ -573,7 +576,7 @@ def write_offline_data(
     # Write users data
     for df_month in users_dfs:
         month_str = df_month.attrs["month_metadata"]
-        file_name = f"movies_{month_str}.parquet"
+        file_name = f"users_{month_str}.parquet"
         output_file_path = users_output_dir / file_name
         
         write_parquet(df_month, str(output_file_path))

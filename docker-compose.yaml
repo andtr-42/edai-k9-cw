@@ -1,33 +1,6 @@
 
 services:
 
-  # DATA SOURCE STORAGE LAYER
-  # data-source-db: # for offline data only
-  #   image: postgres:15-alpine
-  #   hostname: data-source-db
-  #   container_name: data-source-db
-  #   ports:
-  #     - "5433:5432"
-  #   environment:
-  #     POSTGRES_USER: ${DATA_SOURCE_DB_USER}
-  #     POSTGRES_PASSWORD: ${DATA_SOURCE_DB_PASSWORD}
-  #     POSTGRES_DB: ${DATA_SOURCE_DB_NAME}
-  #   command:
-  #     # Set wal_level to logical for CDC, which is required for Debezium to capture changes from PostgreSQL.
-  #     - "postgres"
-  #     - "-c"
-  #     - "wal_level=logical"
-  #   volumes:
-  #     - data_source_data:/var/lib/postgresql/data
-  #   healthcheck:
-  #     # Healthcheck uses pg_isready to check if the PostgreSQL server is ready to accept connections. 
-  #     # It tries to connect as the postgres user, and if it fails, it exits with code 1, indicating an unhealthy state.
-  #     # You often need to read the documentation of the specific image to find out what command to use for health checks, as it can vary between images and versions.
-  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
-  #     interval: 5s
-  #     timeout: 3s
-  #     retries: 5
-  #     start_period: 10s
   data-source-storage:
     image: minio/minio:latest
     hostname: data-source-storage
@@ -124,6 +97,24 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  dwh-db:
+    image: postgres:16-alpine
+    container_name: dwh_postgres_container
+    environment:
+      POSTGRES_DB: ${DWH_DB}
+      POSTGRES_USER: ${DWH_USER}
+      POSTGRES_PASSWORD: ${DWH_PASSWORD}
+    ports:
+      - "${DWH_PORT}:5432"
+    volumes:
+      - dwh_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
 #   # STREAMING DATA ENGINE (Kafka & Redpanda UI)
 #   kafka:
@@ -261,3 +252,4 @@ services:
 volumes:
   data_source_data:
   lakehouse_data:
+  dwh_db_data:

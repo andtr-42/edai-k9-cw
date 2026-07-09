@@ -35,14 +35,13 @@
 ### 3.1 fact_playback
 **Grain:** one per playback. **Keys:** playback_id, user_key, movie_key, playback_date_key, click_date_key, start_date_key, stop_date_key
 **Other attribute columns:** click_ts, click_hour, start_ts, start_hour, , stop_ts (?), stop_hour duration_watched_seconds, completion_rate 
-**Measures:** (?)
+**Measures:** 
 **Note:** Handles skewness, high cardinality and duplicate playbacks. 
 
 ### 3.2 fact_rating
 **Grain:** one per movie per user. **Keys:** rating_id, user_key, movie_key, rating_date_key, rating_key
 **Other attribute columns:** rating_ts, rating_hour
 **Measures:** (?)
-**Note:** Schema evolution on the rating_ts 
 
 ### 3.3 fact_payment_attempt
 **Grain:** one per payment. **Keys:** payment_attempt_id, user_key, payment_date_key, payment_method_key.  
