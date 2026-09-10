@@ -84,10 +84,8 @@ if __name__ == "__main__":
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
 
-        # OPTIMIZATION
-        .config("spark.sql.shuffle.partitions", "8")
-        .config("spark.sql.adaptive.enabled", "true")                  
-        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") 
+        .config("spark.sql.adaptive.enabled", "false")
+        .config("spark.sql.shuffle.partitions", "8")                
         .getOrCreate()
     )
 

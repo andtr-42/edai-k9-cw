@@ -46,9 +46,6 @@ data validation
 
 `python3 -m scripts.store_data_source_data`
 
-
-
-
 -> photo to see the results 
 
 

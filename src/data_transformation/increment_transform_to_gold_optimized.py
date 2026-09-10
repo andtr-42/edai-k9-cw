@@ -4,12 +4,14 @@ python3 -m src.data_transformation.increment_transform_to_gold_baseline
 
 import os, time
 import psycopg
-import pyspark.sql.functions as F
-from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import coalesce, col, expr, when
-from pyspark.sql.functions import col, expr, when, sum as _sum, count as _count, when, coalesce
-from pyspark.sql.functions import col, lit, expr, when, count as _count, sum as _sum, count_distinct
-from pyspark.sql import Window
+from pyspark.sql import DataFrame, SparkSession, Window
+from pyspark.sql.functions import (
+    col, expr, when, sum as _sum, count as _count, 
+    coalesce, lit, to_date, count, flatten, 
+    collect_set, collect_list, size, array_distinct
+)
+from pyspark.sql import functions as F
+from pyspark.sql.functions import col, lit, coalesce, when, count as _count, sum as _sum, count_distinct
 from dotenv import load_dotenv
 
 # 1. REUSE: Import the exact logic from your init script!
@@ -64,14 +66,12 @@ def get_high_water_mark(db_config: dict, table_name: str, time_column: str) -> s
                 return str(result)
     except Exception as e:
         print(f"Failed to get High-Water Mark for {table_name}: {e}")
-        # Default to a very old date if the table is empty
         return '1900-01-01'
 
 def execute_user_scd2_merge(db_config: dict):
     """Executes the SCD2 logic for Users directly inside PostgreSQL."""
     with psycopg.connect(**db_config) as conn:
         with conn.cursor() as cursor:
-            # Expire old records
             cursor.execute("""
             UPDATE gold.dim_user target
             SET valid_to_ts = staging.valid_from_ts,
@@ -83,7 +83,6 @@ def execute_user_scd2_merge(db_config: dict):
                    target.age IS DISTINCT FROM staging.age OR 
                    target.subscription_type IS DISTINCT FROM staging.subscription_type);
             """)
-            # Insert new records
             cursor.execute("""
             INSERT INTO gold.dim_user (user_key, user_id, gender, age, subscription_type, signup_ts, valid_from_ts, valid_to_ts, is_current)
             SELECT 
@@ -100,7 +99,6 @@ def execute_movie_scd2_merge(db_config: dict):
     """Executes the SCD2 logic for Movies directly inside PostgreSQL."""
     with psycopg.connect(**db_config) as conn:
         with conn.cursor() as cursor:
-            # Expire
             cursor.execute("""
             UPDATE gold.dim_movie target
             SET valid_to_ts = staging.valid_from_ts,
@@ -113,7 +111,6 @@ def execute_movie_scd2_merge(db_config: dict):
                    target.runtime_seconds IS DISTINCT FROM staging.runtime_seconds OR
                    target.language IS DISTINCT FROM staging.language);
             """)
-            # Insert
             cursor.execute("""
             INSERT INTO gold.dim_movie (movie_key, movie_id, genre, country, runtime_seconds, language, release_year, created_at, valid_from_ts, valid_to_ts, is_current)
             SELECT 
@@ -128,17 +125,14 @@ def execute_movie_scd2_merge(db_config: dict):
 
 def build_incremental_fact_playback(df_stg_playbacks: DataFrame, df_dim_user: DataFrame, df_dim_movie: DataFrame) -> DataFrame:
     """Builds the Playback Fact table using a Point-in-Time join to ensure historical accuracy."""
-    
-    # 1. Point-in-Time Join with Users
     df_joined_user = df_stg_playbacks.join(
         df_dim_user,
         (df_stg_playbacks.user_id == df_dim_user.user_id) & 
         (df_stg_playbacks.start_ts >= df_dim_user.valid_from_ts) & 
         (df_stg_playbacks.start_ts < df_dim_user.valid_to_ts),
         "inner"
-    ).drop(df_dim_user.user_id) # Drop the extra user_id column after join
+    ).drop(df_dim_user.user_id)
     
-    # 2. Point-in-Time Join with Movies
     df_joined_movie = df_joined_user.join(
         df_dim_movie,
         (df_joined_user.movie_id == df_dim_movie.movie_id) & 
@@ -147,7 +141,6 @@ def build_incremental_fact_playback(df_stg_playbacks: DataFrame, df_dim_user: Da
         "inner"
     ).drop(df_dim_movie.movie_id)
 
-    # 3. Select final columns
     return df_joined_movie.select(
         col("playback_id"),
         col("user_key"),
@@ -217,27 +210,27 @@ def build_incremental_obt(df_fact_playback_new: DataFrame, df_dim_user: DataFram
             col("f.is_completed")
         )
 
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.functions import col, lit, coalesce, when, count as _count, sum as _sum, count_distinct
 
-def build_incremental_features_90d(
+def build_incremental_features_90d_optimized(
     spark: SparkSession, 
     jdbc_url: str, 
     jdbc_properties: dict, 
-    snapshot_date_str: str  
+    snapshot_date_str: str  # Format: "2026-06-08"
 ) -> DataFrame:
     """Directly pulls a 90-day lookback window from raw database facts 
     to build the feature state for a single target execution date.
     
-    Baseline Version: Simulates high-cardinality overhead via pure, exact 
-    distinct movie counting and continuous quantile summary estimation.
-    """
-    snapshot_key = int(snapshot_date_str.replace("-", ""))
-    
+    Optimized Version: Incorporates HyperLogLog cardinality sketches with relaxed 
+    error margin boundaries (rsd=0.03) to avoid JVM serialization choke points.
+    """    
     # 1. Define Lookback Boundary
     start_lookback_expr = f"'{snapshot_date_str}'::DATE - INTERVAL '89 days'"
     end_lookback_expr = f"'{snapshot_date_str}'::DATE"
     
-    # 2. Read Fact data directly inside the 90-day boundary windows
-    # Note: Pulled movie_key explicitly from gold.fact_playback to support distinct counting
+    # 2. Read Fact and Dimension data directly inside the 90-day boundary windows
     df_playback_90d = spark.read.format("jdbc").option("url", jdbc_url) \
         .option("dbtable", f"(SELECT user_key, movie_key, duration_watched_seconds FROM gold.fact_playback WHERE start_ts::DATE BETWEEN {start_lookback_expr} AND {end_lookback_expr}) AS p_90d") \
         .options(**jdbc_properties).load()
@@ -249,7 +242,7 @@ def build_incremental_features_90d(
     df_dim_movie = spark.read.format("jdbc").option("url", jdbc_url) \
         .option("dbtable", "gold.dim_movie").options(**jdbc_properties).load()
 
-    # 3. Aggregate Playback Features
+    # 3. Aggregate Playback Features (Directly from raw transactional data rows)
     df_playback_feats = df_playback_90d.alias("p") \
         .join(df_dim_movie.alias("m"), "movie_key", "inner") \
         .groupBy("user_key") \
@@ -258,10 +251,10 @@ def build_incremental_features_90d(
             count_distinct("m.genre").alias("f_user_distinct_genre_90d"),
             (_sum("p.duration_watched_seconds") / _sum("m.runtime_seconds")).alias("f_user_avg_completion_rate_90d"),
             
-            # --- High Cardinality & Sketch Baseline Metrics ---
-            # Pure exact distinct tracking of movie references
-            count_distinct("p.movie_key").alias("f_user_distinct_movies_90d"),
-            # Quantile summary buffer allocation for median tracking
+            # --- Optimized Feature Targets ---
+            # Swapped out count_distinct for HyperLogLog tracking at a stable 2% error tolerance profile
+            F.approx_count_distinct("p.movie_key", rsd=0.03).alias("f_user_distinct_movies_90d"),
+            # Quantile summary sketch for median watch duration tracking
             F.percentile_approx("p.duration_watched_seconds", 0.5).alias("f_user_median_duration_watched_seconds_90d")
         )
 
@@ -280,21 +273,18 @@ def build_incremental_features_90d(
     # 5. Full Outer Join on User to construct final layout
     df_final_features = df_playback_feats.join(df_payment_feats, "user_key", "outer") \
         .select(
-            col("user_key"),
-            lit(snapshot_key).alias("snapshot_date_key"),
+            col("user_key").alias("user_id"),
+            lit(snapshot_date_str).cast("date").alias("snapshot_date"),
+            
             coalesce(col("f_user_total_playbacks_90d").cast("int"), lit(0)).alias("f_user_total_playbacks_90d"),
             coalesce(col("f_user_distinct_genre_90d").cast("int"), lit(0)).alias("f_user_distinct_genre_90d"),
             coalesce(col("f_user_avg_completion_rate_90d").cast("double"), lit(0.0)).alias("f_user_avg_completion_rate_90d"),
-            
-            # Map new baseline feature structures
             coalesce(col("f_user_distinct_movies_90d").cast("int"), lit(0)).alias("f_user_distinct_movies_90d"),
             coalesce(col("f_user_median_duration_watched_seconds_90d").cast("double"), lit(0.0)).alias("f_user_median_duration_watched_seconds_90d"),
-            
             coalesce(col("f_user_payment_fail_rate_90d").cast("double"), lit(0.0)).alias("f_user_payment_fail_rate_90d")
         )
 
     return df_final_features
-
 # ==========================================
 # MAIN EXECUTION
 # ==========================================
@@ -308,8 +298,9 @@ if __name__ == "__main__":
         .config("spark.driver.host", "127.0.0.1") \
         .config("spark.driver.bindAddress", "127.0.0.1") \
         .config("spark.jars.packages", JARS) \
-        .config("spark.sql.adaptive.enabled", "false") \
-        .config("spark.sql.adaptive.skewJoin.enabled", "false") \
+        .config("spark.sql.adaptive.enabled", "true") \
+        .config("spark.sql.adaptive.skewJoin.enabled", "true") \
+        .config("spark.sql.adaptive.coalescePartitions.minPartitionNum", "64") \
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
         .config("spark.hadoop.fs.s3a.endpoint", f"http://{LAKEHOUSE_ENDPOINT}") \
@@ -317,31 +308,28 @@ if __name__ == "__main__":
         .config("spark.hadoop.fs.s3a.secret.key", LAKEHOUSE_SECRET_KEY) \
         .config("spark.hadoop.fs.s3a.path.style.access", "true") \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+        .config("spark.sql.adaptive.enabled", "true") \
+        .config("spark.sql.adaptive.skewJoin.enabled", "true") \
         .getOrCreate()
     
     spark.sparkContext.setLogLevel("WARN")
 
     print("\n--- 1. Extracting Incremental Silver Data ---")
     
-    # Get High-Water marks (Last time we ingested records)
     last_user_update = get_high_water_mark(DB_CONFIG, "dim_user", "valid_from_ts")
     last_movie_update = get_high_water_mark(DB_CONFIG, "dim_movie", "valid_from_ts")
     last_playback = get_high_water_mark(DB_CONFIG, "fact_playback", "start_ts")
     last_rating = get_high_water_mark(DB_CONFIG, "fact_rating", "rating_ts")
-    last_payment = get_high_water_mark(DB_CONFIG, "fact_payment_attempt", "payment_ts") # Assuming payment_ts exists in stg
+    last_payment = get_high_water_mark(DB_CONFIG, "fact_payment_attempt", "payment_ts")
 
-    # Load and filter Silver data based on the bookmark
     df_stg_users_new = load_silver_table(spark, "stg_users").filter(col("_ingested_at") > last_user_update)
     df_stg_movies_new = load_silver_table(spark, "stg_movies").filter(col("_ingested_at") > last_movie_update)
     df_stg_playbacks_new = load_silver_table(spark, "stg_playbacks").filter(col("start_ts") > last_playback)
     df_stg_ratings_new = load_silver_table(spark, "stg_ratings").filter(col("rating_ts") > last_rating)
     df_stg_payments_new = load_silver_table(spark, "stg_payment_attempts").filter(col("payment_ts") > last_payment)
 
-    # --- PHASE 2: Process Slowly Changing Dimensions ---
     print("\n--- 2. Updating Dimensions via Staging ---")
     
-    # Dimensions require 'overwrite' to staging tables and immediate SQL execution, 
-    # so they are handled outside the append manifest loop.
     if df_stg_users_new.count() > 0:
         df_stg_user_update = build_dim_user(df_stg_users_new)
         write_to_postgres(df_stg_user_update, "stg_user_update", "overwrite")
@@ -354,15 +342,12 @@ if __name__ == "__main__":
         execute_movie_scd2_merge(DB_CONFIG)
         print("✔ Movie SCD2 Merge Complete.")
 
-    # --- PHASE 3: Prepare Incremental DataFrames (Facts & OBT) ---
     print("\n--- 3. Generating Incremental Facts and OBT ---")
     
-    # Read the newly updated Dimensions back into Spark for Point-in-Time Joins
     df_dim_user_current = spark.read.format("jdbc").option("url", JDBC_URL).option("dbtable", "gold.dim_user").options(**JDBC_PROPERTIES).load()
     df_dim_movie_current = spark.read.format("jdbc").option("url", JDBC_URL).option("dbtable", "gold.dim_movie").options(**JDBC_PROPERTIES).load()
     df_dim_payment_current = spark.read.format("jdbc").option("url", JDBC_URL).option("dbtable", "gold.dim_payment_method").options(**JDBC_PROPERTIES).load()
 
-    # Dictionary to hold all tables that require an 'append' write
     gold_increment_manifest = {}
 
     if df_stg_playbacks_new.count() > 0:
@@ -376,26 +361,15 @@ if __name__ == "__main__":
     if df_stg_payments_new.count() > 0:
         gold_increment_manifest["fact_payment_attempt"] = build_incremental_fact_payment(df_stg_payments_new, df_dim_user_current, df_dim_payment_current)
 
-    # --- PHASE 4: Execute Batch Append Loading Sequentially ---
+    print("\n--- 4. Execute Batch Append Loading Sequentially ---")
     for target_table, df in gold_increment_manifest.items():
         print(f"Processing Target: gold.{target_table} ...")
-        
-        spark.sparkContext.setJobGroup(
-            groupId=f"gold_inc_{target_table}", 
-            description=f"Increment gold.{target_table}", 
-            interruptOnCancel=True
-        )
-        
+        spark.sparkContext.setJobGroup(f"gold_inc_{target_table}", f"Increment gold.{target_table}", interruptOnCancel=True)
         write_to_postgres(df, target_table, "append")
         spark.sparkContext.setJobGroup(None, None)
 
-    # --- PHASE 5: Compute and Append 90-Day Rolling Features ---
-    # Only calculate features if there is new transaction data affecting the metrics
     if "fact_playback" in gold_increment_manifest or "fact_payment_attempt" in gold_increment_manifest:
         print("\n--- 5. Computing 90-Day Rolling Snapshot for Features ---")
-        
-        # Determine the target execution date (e.g., dynamically pull the max date from the incoming playback batch)
-        # Assuming you extract this dynamically or pass it as an argument:
         TARGET_SNAPSHOT_DATE = "2026-06-08" 
         
         df_incremental_features = build_incremental_features_90d(
@@ -405,15 +379,11 @@ if __name__ == "__main__":
             snapshot_date_str=TARGET_SNAPSHOT_DATE
         )
         
-        spark.sparkContext.setJobGroup(
-            groupId="gold_inc_feat_user", 
-            description="Increment gold.feat_user", 
-            interruptOnCancel=True
-        )
+        spark.sparkContext.setJobGroup("gold_inc_feat_user", "Increment gold.feat_user", interruptOnCancel=True)
         write_to_postgres(df_incremental_features, "feat_user", "append")
         spark.sparkContext.setJobGroup(None, None)
     else:
-        print("\nNo new playback or payment data detected; skipping 90-day feature computation for now.")
+        print("\nNo new transaction changes detected; feature generation skipped.")
 
     # Optional keep-alive block for Spark UI inspection
     try:

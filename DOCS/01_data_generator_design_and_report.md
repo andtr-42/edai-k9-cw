@@ -10,7 +10,7 @@ This project simulates a medium-size movie streaming platform. The generator pro
 The goal is to support downstream ingestion, transformation, and feature engineering while intentionally injecting realistic data quality and processing challenges.
 
 ---
-
+ 
 ## 2. Offline Dataset Design
 
 ### 2.1 Offline Tables
@@ -113,7 +113,7 @@ random_seed: 42
 | **Skew 1** | `movies.genre` | 60.0% Drama | N/A |
 | **Skew 2**  | `playbacks.duration_watched_seconds` | 80.0% Bimodal (0-.15 or .8-1.0) | While 40% of movies are rarely watched (only 15% runtime), another 40% are blockbusters watched in full. The remaining 20% fall in between, averaging 15% to 80% watch time. |
 | **Cardinality** | `user_id` / `movie_id` / `playback_id` | Unique / High | N/A |
-| **Schema Evolution** | `movies.country` missing (50% timeline) | Missing old partitions | N/A |
+| **Schema Evolution** | `user.gender` missing (50% timeline) | Missing old partitions | N/A |
 | **Duplicates** | `playbacks` | 1.5% duplicates | N/A |
 | **Streaming Bursts** | `events` | 100 baseline and 3000 burst | N/A |
 | **Late Arrivals** | Late `created_ts` vs `event_ts` | 10.0% rate | N/A |

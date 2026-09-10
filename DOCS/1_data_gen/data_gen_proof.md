@@ -70,7 +70,7 @@ This section outlines the storage fingerprint, format schema, and total record v
 | **Playback** | 105,000 rows | 7.8 MB | Apache Parquet | Hive Partitioned by Day (`playback_date=YYYY-MM-DD/`) |
 | **Rating** | 50,000 rows | 2.6 MB | Apache Parquet | Hive Partitioned by Day (`rating_date=YYYY-MM-DD/`) |
 | **Payment** | 50,000 rows | 2.1 MB | Apache Parquet | Hive Partitioned by Day (`payment_date=YYYY-MM-DD/`) |
-| **Event** | ~170,000 events | 79.0 MB | JSON Lines (`.jsonl`) | Chronologically sorted stream file (`streaming_events.jsonl`) |
+| **Event** | 265,200 events | 79.0 MB | JSON Lines (`.jsonl`) | Chronologically sorted stream file (`streaming_events.jsonl`) |
 
 ---
 

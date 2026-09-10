@@ -1,0 +1,105 @@
+,,,Deliverables,Point
+"Viết file README.md để giới thiệu về business domain mà mọi người đang làm và high-level system deployment diagram (diagram tổng thể, kết hợp kiến thức cả khoá nha)
+Mọi người lưu ý:
++ README.md cần có Repo Structure (thể hiện file/folder này làm gì),Table of Contents chia ra từng sections để người dùng dễ đọc!
++ Các hàm/class phải có docstring để mô tả hàm đó làm gì, đầu file phải có mô tả file đó làm những gì
++ mỗi thành phần chính của diagram phải là 1 deloyable unit, ví dụ Kafka là 1 deployable unit, còn Feast SDK không phải deployable unit vì không thể deploy - Xem ví dụ về diagram của các khoá trước ở đây. 
++ mũi tên nên đi theo đường truyền của dữ liệu, ví dụ nếu data truyền từ A đến B thì mũi tên đi từ A đến B, và dữ liệu thể hiện bên trên mũi tên. Còn nếu A chỉ gọi tới B, không truyển dữ liệu gì thì mũi tên từ A đến B.
++ các mũi tên nên có description và đánh số thứ tự, nếu có nhiều user flow, ví dụ end user và developer thì có thể thể hiện các màu mũi tên khác nhau và đánh số thứ tự riêng cho từng flow (ví dụ cả 2 ông đều đi từ 1->n)
++ hạn chế sử dụng mũi tên nét đứt, thường dùng cho các luồng k phải luồng chính (tức luồng liên quan trực tiếp tới các user)
+",,,,
+Deploy a LLM inference platform theo hướng dẫn này và set up gateway cho agent theo hướng dẫn này,Deploy LLM inference platform + setup custom model,Deploy LLM inference platform,"Document cách mọi người deploy, setup các custom model server để có thể triển khai riêng model của mọi người, cách thực hiện benchmark và optimize, cùng kết quả cải thiện sau optimize cho custom model",2
+,,Setup a custom model,,2
+,,Benchmark model server and optimize the platform,,2
+"Deploy 1 global model config để các Agent có thể dùng follow tutorial này, config này sẽ link tới inference platform ở trên thông qua cái agent gateway đề cập ở trên nốt",,,Capture chứng minh phần code config đã được apply,2
+Deploy registry for agent theo tutorial này,,,Capture màn hình thể hiện registry đã được deploy,2
+RAG,RAG Data Pipeline,Build 1 Airflow pipeline với ít nhất các step sau: kéo dữ liệu từ text => chia chunk => lưu embedding vector cho các chunk vào feature store thông qua Feast,"Capture màn hình thể hiện pipeline đã chạy thành công, với lineage trên DataHub",2
+,,Đảm bảo data governance cho pipeline (tương tự mini-coursework),,2
+"Web API kéo dữ liệu user (đã lưu thông qua feature pipeline) và chunk (đã được lưu thông qua RAG pipeline)
+(Web API này sẽ dùng để kéo dữ liệu từ Online Feature store dựa trên ID (user_id, chunk_id, etc.))",Có sử dụng FastAPI + data validation (với pydantic),Có sử dụng FastAPI + data validation (với pydantic) + healthcheck for k8s,"Demonstrate Agent có trên registry, được deploy với multi-replica, giới hạn quyền thông qua Sandbox và màn hình UI chat với Agent",1
+,,Sử dụng async,,1
+,,"Deploy in the form of MCP tool to k8s with helm + rollingupdate + auto fallback (see here)
+Remember, your MCP tool is not like normal API deployment, check it our how to deploy here.",,2
+,,Deploy 1 Agent sử dụng MCP tool ở trên với multi-replica và auto-scale sử dụng cái này,,2
+,,Configure Agent chạy trong Sandbox để đảm bảo security,,1
+,,Publish Agent ở trên lên registry đã deploy để đảm bảo governance,,2
+"Web API cho Real-time Drift Detection (để làm MCP tool, tương tự như trên)",Có sử dụng FastAPI + data validation (với pydantic),Có sử dụng FastAPI + data validation (với pydantic) + healthcheck for k8s,"Demonstrate Agent có trên registry, được deploy với multi-replica, giới hạn quyền thông qua Sandbox và màn hình UI chat với Agent",1
+,,Sử dụng async,,1
+,,"Deploy in the form of MCP tool to k8s with helm + rollingupdate + auto fallback (see here)
+Remember, your MCP tool is not like normal API deployment, check it our how to deploy here.",,2
+,,Deploy 1 Agent sử dụng MCP tool ở trên với multi-replica và auto-scale sử dụng cái này,,2
+,,Configure Agent chạy trong Sandbox để đảm bảo security,,1
+,,Publish Agent ở trên lên registry đã deploy để đảm bảo governance,,2
+Demonstrate basic understanding of Agents,Jupyter notebooks to demonstrate basic understanding of Agents,Jupyter notebook để demonstrate Agent tương tác với MCP servers để kéo feature từ Feast và thực hiện drift detection,Capture kết quả đã tương tác,2
+,,Jupyter notebook để demonstrate Agent tương tác với MCP servers để kéo dữ liệu từ feature store cho RAG (cả nhà coi ví dụ tại đây),,2
+Deploy 1 Coordinator Agent,Điều phối 2 Agent ở trên,Deploy 1 Agent sử dụng MCP tool ở trên với multi-replica và auto-scale sử dụng cái này,,2
+,,Publish Agent ở này lên registry đã deploy để đảm bảo governance,"Demonstrate Agent có trên registry, được deploy với multi-replica, và màn hình UI chat với Agent",2
+"Cài đặt hệ thống ở chế độ Warm Up cho agent theo hướng dẫn sau để tối ưu chi phí, đồng thời giảm thiểu thời gian startup",,,"+ Benchmark và document đã tối ưu được gì
++ Document cách tăng HA (ví dụ set up replicas cho worker pool)",2
+Validation & Verification,,"Unit test với Test Coverage > 90%
+(với proof bằng screenshot thể hiện khả năng test Web API, và sử dụng fixture, mock) ",Capture màn hình đã chạy test với test coverage thoả mãn yêu cầu,1
+,,"Có sử dụng kỹ thuật equivalence partitioning vs boundary value analysis khi thiết kế test cases để parametrize.
+(Cái này chưa được dạy, nhưng đơn giản lắm, cả nhà coi ở đây)",Capture màn hình để thể hiện đã sử dụng các kỹ thuật này,2
+,,"Có sử dụng mutation testing để đánh giá hiệu quả của các test (cái này đã dạy ở lớp rồi nha cả nhà, là cái https://mutmut.readthedocs.io/). Note that you mutate only code changed, not the whole code base everytime you push your commit! Mutation score > 80%.",Capture màn hình để thể hiện đã sử dụng các kỹ thuật này,2
+,,"Idempotency testing sử dụng property-based testing (chuyên để tìm ra cái test case có thể tạo ra bug), ví dụ, để kiểm tra xem model prediction có generate ra kết quả consistent sau nhiều lần chạy không. You can use the library hypothesis for property-based testing, combine with crosshair backend to find bugs easier.",Capture màn hình để thể hiện đã sử dụng các kỹ thuật này,2
+,,"Load test the Web API (cái Web API kéo dữ liệu) to understand throughput (req/s) and latency
+(generate a html file with locust as SLA)",Capture màn hình HTML output,2
+Improve the Data Generator,Simulate data drift,Simulate data drift,Capture màn hình thể hiện generator configuration và bảng sau khi merge id và label,1
+,,Using generator configuration,,1
+,"Tạo bảng label có 2 cột id và label. Bảng này sẽ dùng để join với các bảng feature cho training. 
+(cột id có thể đổi thành user_id, customer_id hay gì đó tuỳ mọi người)",,,2
+"CI/CD
+(CI/CD = test + build + auto-deploy)
+(all secrets should be saved in Jenkins or similar tools instead of putting it inside your code!)",CI/CD cho RAG Data Pipeline,RAG Data Pipeline,Capture màn hình từng CI/CD pipeline đã run thành công,2
+,"CI/CD cho MCP Servers & Agents
+(Build & package xong MCP Servers => Deploy Agent with the corresponding MCP Servers)",Agent kéo dữ liệu,,2
+,,Agent drift detection,,2
+,,Agent để làm coordinator,,2
+,CI/CD cho jobs,Job 1: Push stream feature to OFFLINE store,,2
+,,Job 2: Push stream feature to ONLINE store,,2
+Routing & Gateway (NGINX Ingress Controller),Các service cần được hide đằng sau gateway,Service để coi metric (ví dụ Grafana),Capture màn hình thể hiện từng setup đã thành công,2
+,,Service để coi log (ví dụ Kibana),,2
+,,Service để coi trace (ví dụ Jaeger),,2
+,,UI để test agent (xem tại đây),,2
+,,UI cho agent registry,,2
+,Basic authentication & rate limit ở gateway (username/password),Setup authentication cho UI test agent ở trên,,2
+,Setup domain & enable HTTPS,Làm cái này cho Web API kéo dữ liệu. Mọi người có thể tham khảo 2 đồ án sau: cái này và cái này ,,1
+IaC,"Dùng Terraform để setup GKE hoặc các cloud services (để ý cách chia folder theo từng service nếu có, ví dụ như sau)",,"Capture màn hình thể hiện từng setup đã chạy thành công
+",1
+,"Dùng Ansible để configure và deploy các service lên VM 
+(cần chia thành các role để code clean hơn)",,,1
+Observability,Web API metrics,"Web API monitoring metrics such as req/s, num. of reqs, num. of failures, etc.","Capture màn hình thể hiện các data đã được capture, có thể coi trên các dashboard
+",1
+,"Computing telemetry data
+(such as CPU, RAM, disk, network, etc.)",Collect và visualize metrics với Prometheus + Grafana (hoặc tool tương tự),,1
+,,Tương tự cho logs,,1
+,,Tương tự cho traces,,1
+,LLM-related telemetry data,"Đảm bảo ít nhất các metrics
++ token metrics (count of input tokens, output tokens and total tokens per req)
++ total round-trip time for a generation
++ TTFT
++ Frequencies of prompts caught by safety of PII",,2
+,Agent-related telemetry data,"Đảm bảo ít nhất các metrics
++ total num of times each agent is called
++ total num of times each MCP tool is called
++ total failures cho mỗi lượt call tool",,2
+A/B Testing,"When you deploy a new model, don't replace the old one directly, you should do A/B test, monitor it, and deploy.",Perform A/B test for agents with different model config and monitor them,Capture màn hình thể hiện cách mọi người thực hiện A/B test và dashboard để đánh giá kết quả A/B test,1
+,,Perform A/B test for different LLM versions on the LLM inference platform,,1
+Security,Centralize secret management,Centralize secret management via Hashi Corp Vault (or similar tools) so it will be used across the whole organization.,Capture màn hình thể hiện cách mọi người thực hiện centrailize secret management,1
+Repository Design,Clean Code + clean repo + demonstrate the use of Design Pattern,,Capture màn hình thể hiện Design Pattern đã được sử dụng trong code,2
+"Documentation 
+(tất cả documents để trong folder `docs/`, và ở README.md thì mọi người link tới mấy document này nhé. README.md chỉ summarize thôi, và nếu ai muốn đọc chi tiết các document optimize hoặc schema design thì đọc thêm ở trong docs/)
+(các capture màn hình cũng nên đính ở trong document để mô tả rõ mục đích từng cái muốn thể hiện điều gì, thay vì chỉ để một đống ảnh trong folder và để reviewer tự hiểu, tốt nhất nên có 1 file doc trong mỗi phần to trong folder docs/, ví dụ IaC.md thể hiện các output/document của step này, hoặc Security.md, etc.)",Low-level ML Design,"Propose 5 key classes to present our main focus:
+Example:
+class TrainingDataService:
+    def read_training_table(self) -> DataFrame: ...
+    def validate_schema(self, df: DataFrame) -> None: ...
+    def dedup_by_created_ts(self, df: DataFrame) -> DataFrame: ...
+
+class SplitService:
+    def get_split_boundaries(self, df: DataFrame) -> dict: ...
+    def split_by_time(self, df: DataFrame) -> tuple[DataFrame, DataFrame, DataFrame]: ...",Document 5 key classes,1
+"Novel ideas 
+(không nhất thiết tự sáng tạo ra cái gì, có thể nghiên cứu dùng thêm các công cụ, hoặc kỹ thuật gì đó không được dạy ở EDAI)",Idea 1,,Document idea + proof it worked!,2
+,Idea 2,,Document idea + proof it worked!,2
+,,,Sum,100

@@ -26,14 +26,6 @@ from src.config import (
     BRONZE_BUCKET,
 )
 
-USER_SCHEMA = StructType([
-    StructField("user_id",           LongType(),      nullable=False),
-    StructField("gender",            StringType(),    nullable=True),  # Must be nullable to apply fillna
-    StructField("age",               LongType(),      nullable=True),
-    StructField("subscription_type", StringType(),    nullable=True),
-    StructField("signup_ts",         TimestampType(), nullable=True),
-])
-
 def add_metadata_columns(df: DataFrame) -> DataFrame:
     """Appends audit and data lineage metadata columns to the DataFrame."""
     return df.withColumn("raw_id", F.monotonically_increasing_id()) \
@@ -44,22 +36,12 @@ def extract_data(
     spark: SparkSession, 
     bucket_name: str, 
     data_path: str, 
-    explicit_schema: StructType | None = None,
-    fill_na_dict: dict | None = None
 ) -> DataFrame:
     """Reads Parquet data using explicit schema and applies fillna handling if provided."""
     full_path = f"s3a://{bucket_name}/{data_path}"
     
     reader = spark.read
-    if explicit_schema:
-        # Enforcing schema directly eliminates the costly mergeSchema job overhead
-        # reader = reader.option("mergeSchema", "True")  # Allow schema merging if needed
-        reader = reader.schema(explicit_schema)
-        
     df = reader.parquet(full_path)
-    
-    if fill_na_dict:
-        df = df.fillna(fill_na_dict)
         
     return add_metadata_columns(df)
 
@@ -125,7 +107,8 @@ if __name__ == "__main__":
         .config(f"spark.hadoop.fs.s3a.bucket.{BRONZE_BUCKET}.endpoint", f"http://{LAKEHOUSE_ENDPOINT}")
         .config(f"spark.hadoop.fs.s3a.bucket.{BRONZE_BUCKET}.access.key", LAKEHOUSE_ACCESS_KEY)
         .config(f"spark.hadoop.fs.s3a.bucket.{BRONZE_BUCKET}.secret.key", LAKEHOUSE_SECRET_KEY)
-        
+
+        .config("spark.sql.adaptive.enabled", "false")                  
         .getOrCreate()
     )
 
@@ -142,12 +125,7 @@ if __name__ == "__main__":
 
     # Execute batch processing across the manifest sequentially
     datasets = {
-        "raw_users": {
-            "path": "users", 
-            "partition_cols": None, 
-            "schema": USER_SCHEMA, 
-            "fillna": {"gender": "UNKNOWN"} # Fills missing gender values smoothly
-        },
+        "raw_users": {"path": "users", "partition_cols": None, "schema": None, "fillna": None},
         "raw_movies": {"path": "movies.parquet", "partition_cols": None, "schema": None, "fillna": None},
         "raw_playbacks": {"path": "playbacks.parquet", "partition_cols": None, "schema": None, "fillna": None}, 
         "raw_ratings": {"path": "ratings.parquet", "partition_cols": None, "schema": None, "fillna": None}, 
@@ -159,14 +137,19 @@ if __name__ == "__main__":
         print(f"\n==================== Processing Topic: {topic} ====================")
         spark.sparkContext.setJobGroup(groupId=topic, description=f"Ingesting {topic}", interruptOnCancel=True)
         
-        df = extract_data(
-            spark, 
-            bucket_name=DATA_SOURCE_BUCKET, 
-            data_path=config["path"], 
-            explicit_schema=config["schema"],
-            fill_na_dict=config["fillna"]
-        )
-        
+        if topic == "raw_users":
+            df = extract_data_with_schema_merging(
+                spark, 
+                bucket_name=DATA_SOURCE_BUCKET, 
+                data_path=config["path"]
+            )
+        else:
+            df = extract_data(
+                spark, 
+                bucket_name=DATA_SOURCE_BUCKET, 
+                data_path=config["path"]
+            )
+
         upload_delta(df=df, bucket_name=BRONZE_BUCKET, topic=topic, partition_cols=config["partition_cols"])
         spark.sparkContext.setJobGroup(None, None)
 

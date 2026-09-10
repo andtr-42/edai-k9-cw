@@ -15,7 +15,7 @@ Data Models Generated:
     3. Playbacks (playbacks/): Hive-partitioned logs (by playback_date) tracking user 
        video playback engagement with vectorized bimodal completion rates.
     4. Ratings (ratings/): Hive-partitioned logs (by rating_date) tracking content reviews.
-    5. Payments (payments/): Hive-partitioned logs (by payment_date) detailing customer transactions.
+    5. Payments (payments/): Hive-partitioned logs x(by payment_date) detailing customer transactions.
 
 Engine Features & Guardrails:
     - Microsecond Time Precision: Simulates organic back-dated transaction logs based on a anchor date.

@@ -139,14 +139,15 @@ CREATE TABLE IF NOT EXISTS gold.obt_playback (
 -- Feature Table: User 90-Day Aggregates
 CREATE TABLE IF NOT EXISTS gold.feat_user_90d (
     user_id VARCHAR(32) NOT NULL,
-    snapshot_date DATE NOT NULL,                 -- Format: YYYYMMDD
+    snapshot_date DATE NOT NULL,
     
     -- Features
     f_user_total_playbacks_90d INT DEFAULT 0,
     f_user_distinct_genre_90d INT DEFAULT 0,
-    f_user_avg_duration_watched_seconds_90d DOUBLE PRECISION DEFAULT 0.0,
-    f_user_payment_fail_rate_90d DOUBLE PRECISION DEFAULT 0.0,
     f_user_avg_completion_rate_90d DOUBLE PRECISION DEFAULT 0.0,
+    f_user_distinct_movies_90d INT DEFAULT 0,
+    f_user_median_duration_watched_seconds_90d DOUBLE PRECISION DEFAULT 0.0,
+    f_user_payment_fail_rate_90d DOUBLE PRECISION DEFAULT 0.0,
     
     PRIMARY KEY (user_id, snapshot_date)
 );
