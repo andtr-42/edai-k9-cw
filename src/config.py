@@ -15,11 +15,12 @@ HADOOP_VERSION = "3.3.4"
 OFFLINE_DATA_PATH = BASE_DIR / "output" / "offline"
 STREAMING_DATA_PATH = BASE_DIR / "output" / "streaming"
 
-# DATA SOURCE CREDENTIALS
-DATA_SOURCE_ENDPOINT = os.getenv("DATA_SOURCE_ENDPOINT", "localhost:9000")
-DATA_SOURCE_ACCESS_KEY = os.getenv("DATA_SOURCE_ACCESS_KEY", "dsadmin")
-DATA_SOURCE_SECRET_KEY = os.getenv("DATA_SOURCE_SECRET_KEY", "dsadmin123")
-DATA_SOURCE_BUCKET = os.getenv("DATA_SOURCE_BUCKET", "data-source-bucket")
+# DATA SOURCE CREDENTIALS (PostgreSQL operational DB)
+DS_DB_HOST = os.getenv("DS_DB_HOST", "localhost")
+DS_DB_PORT = os.getenv("DS_DB_PORT", "5434")
+DS_DB_NAME = os.getenv("DS_DB_NAME", "data_source_storage")
+DS_DB_USER = os.getenv("DS_DB_USER", "dsadmin")
+DS_DB_PASSWORD = os.getenv("DS_DB_PASSWORD", "dsadmin123")
 
 # DATA LAKEHOUSE CREDENTIALS
 LAKEHOUSE_ENDPOINT = os.getenv("LAKEHOUSE_ENDPOINT", "localhost:9002")

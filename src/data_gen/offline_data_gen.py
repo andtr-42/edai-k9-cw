@@ -28,15 +28,10 @@ Runtime Context:
     $ python -m src.generation.offline_data_gen
 """
 
-import os
-import shutil
 import numpy as np
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
-import pyarrow.dataset as ds
-from pathlib import Path
-from src.config import OFFLINE_DATA_PATH
+import psycopg
+from src.config import DS_DB_HOST, DS_DB_PORT, DS_DB_NAME, DS_DB_USER, DS_DB_PASSWORD
 
 # ==========================================
 # 1. CONFIGURATION
@@ -132,39 +127,17 @@ PAYMENT_CONFIG = {
 # 2. LOGIC & FUNCTIONS
 # ==========================================
 
-def write_parquet(
-    df: pd.DataFrame, output_path: str, partition_cols: list[str] | None = None
-) -> None:
-    """Write a DataFrame to Parquet format, optionally partitioning by specified columns."""
-
-    # Create a shallow copy to prevent side effects on the source DataFrame
-    df_storage = df.copy()
-
-    # Identify and downcast any nanosecond timestamp columns safely
-    for col in df_storage.columns:
-        if pd.api.types.is_datetime64_ns_dtype(df_storage[col]):
-            # .dt accessor works perfectly here because df_storage[col] is a Series
-            df_storage[col] = df_storage[col].astype("datetime64[us]")
-
-    # Convert the cleaned DataFrame into a PyArrow Table
-    tbl = pa.Table.from_pandas(df_storage)
-    # tbl = pa.Table.from_pandas(df)
-
-    if partition_cols:
-        hive_partitioning = ds.partitioning(
-            schema=pa.schema([tbl.schema.field(col) for col in partition_cols]),
-            flavor="hive",
-        )
-
-        ds.write_dataset(
-            tbl,
-            base_dir=output_path,
-            format="parquet",
-            partitioning=hive_partitioning,
-            max_rows_per_group=10_000,
-        )
-    else:
-        pq.write_table(tbl, output_path)
+def _to_py(v):
+    """Convert numpy/pandas scalar to a Python native type for psycopg COPY."""
+    if v is None:
+        return None
+    if isinstance(v, float) and pd.isna(v):
+        return None
+    if hasattr(v, "item"):  # numpy scalar
+        return v.item()
+    if isinstance(v, pd.Timestamp):
+        return v.to_pydatetime()
+    return v
 
 
 def generate_users(
@@ -547,94 +520,61 @@ def offline_data_generator(
     return users_dfs, movies_df, playbacks_df, ratings_df, payments_df
 
 
-def write_offline_data(
+def _copy_table(cur: psycopg.Cursor, table: str, columns: list[str], df: pd.DataFrame) -> None:
+    """Bulk-inserts a DataFrame into a PostgreSQL table using COPY FROM STDIN."""
+    copy_sql = f"COPY {table} ({', '.join(columns)}) FROM STDIN"
+    with cur.copy(copy_sql) as copy:
+        for row in df[columns].itertuples(index=False, name=None):
+            copy.write_row(tuple(_to_py(v) for v in row))
+    print(f"  ✔ {table}: {len(df):,} rows inserted")
+
+
+def insert_offline_data(
     users_dfs: list[pd.DataFrame],
     movies_df: pd.DataFrame,
     playbacks_df: pd.DataFrame,
     ratings_df: pd.DataFrame,
     payments_df: pd.DataFrame,
-    base_output_path: "Path" = OFFLINE_DATA_PATH
 ) -> None:
-    """Handles directory wiping, creation, and saving datasets to Parquet."""
-    
-    if base_output_path.exists():
-        shutil.rmtree(base_output_path)
-        print("Folder contents wiped. Empty folder preserved.")        
+    """Bulk-inserts all generated datasets into the PostgreSQL data-source-storage DB."""
 
-    base_output_path.mkdir(parents=True, exist_ok=True)
-
-    # Set up and create output directories safely using pathlib
-    users_output_dir = base_output_path / "users"
-    movies_output_path = base_output_path / "movies.parquet"
-    playbacks_output_path = base_output_path / "playbacks.parquet"
-    ratings_output_path = base_output_path / "ratings.parquet"
-    payments_output_path = base_output_path / "payments.parquet"
-
-    # check if the users_output_dir exist
-    users_output_dir.mkdir(exist_ok=True)
-    
-    # Write users data
-    for df_month in users_dfs:
-        month_str = df_month.attrs["month_metadata"]
-        file_name = f"users_{month_str}.parquet"
-        output_file_path = users_output_dir / file_name
-        
-        write_parquet(df_month, str(output_file_path))
-
-    print(f"Successfully generated and saved users data to {users_output_dir}")
-
-    write_parquet(movies_df, str(movies_output_path))
-    print(f"Successfully generated and saved monthly movie files to {movies_output_path}")
-
-    # Write Hive-partitioned DataFrames
-    write_parquet(
-        df=playbacks_df, 
-        output_path=str(playbacks_output_path), 
+    conn_str = (
+        f"dbname={DS_DB_NAME} user={DS_DB_USER} password={DS_DB_PASSWORD} "
+        f"host={DS_DB_HOST} port={DS_DB_PORT}"
     )
-    print(f"Successfully saved playbacks data to {playbacks_output_path}")
 
-    write_parquet(
-        df=ratings_df, 
-        output_path=str(ratings_output_path), 
-    )
-    print(f"Successfully saved ratings data to {ratings_output_path}")
+    # Merge monthly user shards; outer join so gender=NULL for pre-evolution months
+    users_df = pd.concat(users_dfs, axis=0, join="outer", ignore_index=True, sort=False)
 
-    write_parquet(
-        df=payments_df, 
-        output_path=str(payments_output_path), 
-        # partition_cols=["payment_date"]
-    )
-    print(f"Successfully saved payments data to {payments_output_path}")
+    with psycopg.connect(conn_str) as conn:
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE TABLE users, movies, playbacks, ratings, payments RESTART IDENTITY CASCADE")
 
+            _copy_table(cur, "users",
+                        ["user_id", "age", "subscription_type", "signup_ts", "gender"],
+                        users_df)
 
-# if __name__ == "__main__":
-    
-#     # Initialize environment
-#     np.random.seed(RANDOM_SEED)
+            _copy_table(cur, "movies",
+                        ["movie_id", "genre", "country", "runtime_seconds", "language", "release_year", "created_at"],
+                        movies_df)
 
-#     # Configuration parameters
-#     EXECUTION_PARAMS = {
-#         "n_users": 100_000,
-#         "n_movies": 100_000,
-#         "n_playbacks": 100_000,
-#         "n_ratings": 50_000,
-#         "n_payment_attempts": 50_000,
-#         "base_date": pd.Timestamp("2026-06-07"),
-#         "days_history": 180,
-#         "schema_change_date": pd.Timestamp("2026-04-07"),
-#         "skew_genre": "Drama",
-#         "skew_ratio_genre": 0.6,
-#         "duplicate_rate": 0.05,
-#     }
+            _copy_table(cur, "playbacks",
+                        ["playback_id", "user_id", "movie_id", "click_ts", "start_ts",
+                         "completion_rate", "duration_watched_seconds", "end_ts", "playback_date"],
+                        playbacks_df)
 
-#     # Generate data
-#     generated_data = offline_data_generator(**EXECUTION_PARAMS)
+            _copy_table(cur, "ratings",
+                        ["rating_id", "user_id", "movie_id", "rating", "rating_ts", "rating_date"],
+                        ratings_df)
 
-#     # Unpack and write data to disk
-#     write_offline_data(*generated_data, base_output_path=OFFLINE_DATA_PATH)
+            _copy_table(cur, "payments",
+                        ["payment_id", "user_id", "payment_method", "currency",
+                         "payment_status", "payment_ts", "amount", "payment_date"],
+                        payments_df)
 
-#     os._exit(0)
+        conn.commit()
 
+    print("✅ All datasets inserted into data-source-storage.")
 
 
 

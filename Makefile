@@ -1,6 +1,10 @@
 PYTHON = python3
 
-.PHONY: init-data-transform
+.PHONY: setup-data-source data-ingest data-ingest-opt data-process data-process-opt \
+        init-data-transform init-data-transform-opt increment-data-transform increment-data-transform-opt
+
+setup-data-source:
+	$(PYTHON) -m scripts.setup_data_source_db
 
 data-ingest:
 	$(PYTHON) -m src.data_ingestion.ingest_to_bronze_baseline
